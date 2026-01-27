@@ -97,10 +97,12 @@ class ImportPage(QWidget):
         self._import_thread: QThread | None = None
         self._import_worker: ImportWorker | None = None
         self._import_progress: QProgressDialog | None = None
+        self._import_cancel_button: QPushButton | None = None
         self._import_status: dict[str, object] | None = None
         self._clinvar_thread: QThread | None = None
         self._clinvar_worker: ClinVarAutoWorker | None = None
         self._clinvar_progress: QProgressDialog | None = None
+        self._clinvar_cancel_button: QPushButton | None = None
         self._last_import_ok = False
 
         self.profile_combo = QComboBox()
@@ -214,13 +216,16 @@ class ImportPage(QWidget):
             return
         mode = self.mode_combo.currentText()
 
-        progress = QProgressDialog("Importing data...", "Cancel", 0, 100, self)
+        progress = QProgressDialog("Importing data...", "", 0, 100, self)
         progress.setWindowTitle("Import")
         progress.setAutoClose(False)
         progress.setAutoReset(False)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        cancel_button = QPushButton("Cancel")
+        progress.setCancelButton(cancel_button)
         progress.show()
         self._import_progress = progress
+        self._import_cancel_button = cancel_button
 
         self.import_button.setEnabled(False)
         self.browse_button.setEnabled(False)
@@ -345,15 +350,15 @@ class ImportPage(QWidget):
         QMessageBox.critical(self, "Import failed", message)
 
     def _cancel_import(self) -> None:
-        if not self._import_worker:
+        if not self._import_worker or not self._import_thread or not self._import_thread.isRunning():
             return
         self._import_worker.request_cancel()
         if self._import_status:
             self._import_status["stage"] = "Cancelling..."
             self._import_status["eta"] = 0.0
             self._update_import_label()
-        if self._import_progress and self._import_progress.cancelButton():
-            self._import_progress.cancelButton().setEnabled(False)
+        if self._import_cancel_button:
+            self._import_cancel_button.setEnabled(False)
 
     def _maybe_start_clinvar_after_import(self) -> None:
         if self._last_import_ok:
@@ -368,13 +373,48 @@ class ImportPage(QWidget):
         if not rsid_filter:
             return
 
-        progress = QProgressDialog("Updating ClinVar matches...", "", 0, 0, self)
+        progress = QProgressDialog("Updating ClinVar matches...", "", 0, 100, self)
         progress.setWindowTitle("ClinVar Import")
         progress.setAutoClose(False)
-        progress.setCancelButton(None)
+        progress.setAutoReset(False)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        cancel_button = QPushButton("Cancel")
+        progress.setCancelButton(cancel_button)
         progress.show()
         self._clinvar_progress = progress
+        self._clinvar_cancel_button = cancel_button
+
+        status = {
+            "count": 0,
+            "percent": 0,
+            "eta": 0.0,
+        }
+
+        def update_label() -> None:
+            label = "Updating ClinVar matches..."
+            if status["percent"]:
+                label += f" — {status['percent']}%"
+            if status["count"]:
+                label += f" ({status['count']} variants)"
+            if status["eta"] > 0:
+                minutes, seconds = divmod(int(status["eta"]), 60)
+                hours, minutes = divmod(minutes, 60)
+                if hours:
+                    eta_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                else:
+                    eta_text = f"{minutes:02d}:{seconds:02d}"
+                label += f" — ETA {eta_text}"
+            progress.setLabelText(label)
+            progress.setValue(int(status["percent"]))
+
+        def on_progress(count: int) -> None:
+            status["count"] = count
+            update_label()
+
+        def on_detail(percent: int, _bytes_read: int, eta_seconds: float) -> None:
+            status["percent"] = percent
+            status["eta"] = eta_seconds
+            update_label()
 
         self._clinvar_thread = QThread(self)
         self._clinvar_worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter)
@@ -383,22 +423,26 @@ class ImportPage(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
         worker.error.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
+        worker.canceled.connect(worker.deleteLater)
         worker.error.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._cleanup_clinvar_refs)
-        worker.progress.connect(
-            lambda count: progress.setLabelText(f"Processed {count} variants..."),
-            Qt.ConnectionType.QueuedConnection,
-        )
+        worker.progress.connect(on_progress, Qt.ConnectionType.QueuedConnection)
+        worker.detail.connect(on_detail, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(
             lambda summary: self._finish_clinvar(summary, progress), Qt.ConnectionType.QueuedConnection
         )
+        worker.canceled.connect(lambda: self._cancel_clinvar(progress), Qt.ConnectionType.QueuedConnection)
         worker.error.connect(
             lambda message: self._fail_clinvar(message, progress), Qt.ConnectionType.QueuedConnection
         )
+        progress.canceled.connect(self._cancel_clinvar_request)
         thread.start()
+
+        update_label()
 
     def _finish_clinvar(self, summary: dict, progress) -> None:
         progress.close()
@@ -413,6 +457,19 @@ class ImportPage(QWidget):
         progress.close()
         QMessageBox.warning(self, "ClinVar import failed", message)
 
+    def _cancel_clinvar_request(self) -> None:
+        if not self._clinvar_worker or not self._clinvar_thread or not self._clinvar_thread.isRunning():
+            return
+        self._clinvar_worker.request_cancel()
+        if self._clinvar_cancel_button:
+            self._clinvar_cancel_button.setEnabled(False)
+        if self._clinvar_progress:
+            self._clinvar_progress.setLabelText("Cancelling ClinVar import...")
+
+    def _cancel_clinvar(self, progress) -> None:
+        progress.close()
+        self.summary_label.setText(self.summary_label.text() + " ClinVar import cancelled.")
+
     def _reenable_import_ui(self) -> None:
         self.import_button.setEnabled(True)
         self.browse_button.setEnabled(True)
@@ -423,16 +480,20 @@ class ImportPage(QWidget):
         self._import_thread = None
         self._import_worker = None
         self._import_progress = None
+        self._import_cancel_button = None
         self._import_status = None
 
     def _cleanup_clinvar_refs(self) -> None:
         self._clinvar_thread = None
         self._clinvar_worker = None
         self._clinvar_progress = None
+        self._clinvar_cancel_button = None
 
 class ClinVarAutoWorker(QObject):
     progress = Signal(int)
+    detail = Signal(int, int, float)
     finished = Signal(dict)
+    canceled = Signal()
     error = Signal(str)
 
     def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str]) -> None:
@@ -440,6 +501,13 @@ class ClinVarAutoWorker(QObject):
         self.db_path = db_path
         self.file_path = file_path
         self.rsid_filter = rsid_filter
+        self._cancel_event = threading.Event()
+
+    def request_cancel(self) -> None:
+        self._cancel_event.set()
+
+    def _cancel_check(self) -> bool:
+        return self._cancel_event.is_set()
 
     def run(self) -> None:
         try:
@@ -447,9 +515,13 @@ class ClinVarAutoWorker(QObject):
                 file_path=self.file_path,
                 db_path=self.db_path,
                 on_progress=self.progress.emit,
+                on_progress_detail=self.detail.emit,
                 replace=True,
                 rsid_filter=self.rsid_filter,
+                cancel_check=self._cancel_check,
             )
             self.finished.emit(summary)
+        except ImportCancelled:
+            self.canceled.emit()
         except Exception:  # pragma: no cover - UI only
             self.error.emit(traceback.format_exc())

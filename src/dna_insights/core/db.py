@@ -367,9 +367,10 @@ class Database:
         row = cur.fetchone()
         return dict(row) if row else None
 
-    def clear_clinvar_variants(self) -> None:
+    def clear_clinvar_variants(self, *, commit: bool = True) -> None:
         self.conn.execute("DELETE FROM clinvar_variants")
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_all_rsids(self) -> set[str]:
         cur = self.conn.execute(
