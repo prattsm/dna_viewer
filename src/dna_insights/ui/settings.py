@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
-from dna_insights.core.clinvar import import_clinvar_snapshot, seed_metadata
+from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot, seed_metadata
 from dna_insights.core.settings import resolve_data_dir, save_settings
 
 
@@ -25,10 +25,11 @@ class ClinVarImportWorker(QObject):
     finished = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, db_path: Path, file_path: Path) -> None:
+    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str] | None) -> None:
         super().__init__()
         self.db_path = db_path
         self.file_path = file_path
+        self.rsid_filter = rsid_filter
 
     def run(self) -> None:
         try:
@@ -37,6 +38,7 @@ class ClinVarImportWorker(QObject):
                 db_path=self.db_path,
                 on_progress=self.progress.emit,
                 replace=True,
+                rsid_filter=self.rsid_filter,
             )
             self.finished.emit(summary)
         except Exception as exc:  # pragma: no cover - UI only
@@ -60,6 +62,7 @@ class SettingsPage(QWidget):
         self.pgx_checkbox.setChecked(self.state.settings.opt_in_categories.get("pgx", False))
 
         self.import_clinvar_button = QPushButton("Import ClinVar snapshot (VCF/VCF.GZ)")
+        self.auto_import_label = QLabel("")
         self.clinvar_status_label = QLabel("")
 
         self.kb_label = QLabel(f"Knowledge base version: {self.state.manifest.kb_version}")
@@ -73,6 +76,7 @@ class SettingsPage(QWidget):
         layout.addWidget(self.clinical_checkbox)
         layout.addWidget(self.pgx_checkbox)
         layout.addWidget(self.import_clinvar_button)
+        layout.addWidget(self.auto_import_label)
         layout.addWidget(self.clinvar_status_label)
         layout.addWidget(self.kb_label)
         layout.addWidget(self.banner)
@@ -87,6 +91,7 @@ class SettingsPage(QWidget):
 
         self.refresh()
         self._refresh_clinvar_status()
+        self._refresh_auto_import_hint()
 
     def refresh(self) -> None:
         data_dir = resolve_data_dir(self.state.settings)
@@ -138,8 +143,9 @@ class SettingsPage(QWidget):
         progress.setCancelButton(None)
         progress.show()
 
+        rsid_filter = self.state.db.get_all_rsids()
         thread = QThread(self)
-        worker = ClinVarImportWorker(self.state.db_path, Path(file_path))
+        worker = ClinVarImportWorker(self.state.db_path, Path(file_path), rsid_filter)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(lambda count: progress.setLabelText(f"Processed {count} variants..."))
@@ -184,4 +190,15 @@ class SettingsPage(QWidget):
         self.clinvar_status_label.setText(
             f"ClinVar snapshot imported {meta.get('imported_at', '')} "
             f"({meta.get('variant_count', 0)} variants)."
+        )
+
+    def _refresh_auto_import_hint(self) -> None:
+        data_dir = resolve_data_dir(self.state.settings)
+        auto_path = auto_import_path(data_dir)
+        if auto_path:
+            self.auto_import_label.setText(f"Auto import source found: {auto_path}")
+            return
+        self.auto_import_label.setText(
+            f"Auto import: drop a ClinVar VCF at {data_dir / 'clinvar'} "
+            "named 'clinvar.vcf.gz' (or 'clinvar.vcf') to auto-import on launch."
         )

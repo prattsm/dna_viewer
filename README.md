@@ -68,7 +68,10 @@ Each module includes evidence grading, limitations, and references that appear i
 
 ## ClinVar snapshot import (optional)
 - The app ships with a small bundled ClinVar snapshot so clinical references work out of the box.
-- Import a local ClinVar VCF/VCF.GZ snapshot in **Settings** to replace the bundled data with a larger dataset.
+- To use the full ClinVar dataset, place a VCF/VCF.GZ at:
+  - `<data_dir>/clinvar/clinvar.vcf.gz` (or `clinvar.vcf`)
+  - The app will auto-import it on launch (no manual step required).
+- You can still import via **Settings** to replace the bundled data on demand.
 - Only high-confidence review statuses (expert panel or practice guideline) and pathogenic/likely pathogenic entries are stored.
 - Any clinical references are informational only and require clinical confirmation.
 

@@ -4,16 +4,40 @@ import logging
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from dna_insights.app_state import AppState
 from dna_insights.constants import APP_NAME, LOG_FILENAME
-from dna_insights.core.clinvar import seed_clinvar_if_missing
+from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot, seed_clinvar_if_missing
 from dna_insights.core.knowledge_base import load_manifest, load_modules
 from dna_insights.core.security import EncryptionManager
 from dna_insights.core.settings import load_settings, resolve_data_dir, save_settings
 from dna_insights.ui.main_window import MainWindow
 from dna_insights.ui.widgets import prompt_passphrase
+
+
+class ClinVarAutoWorker(QObject):
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str]) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.file_path = file_path
+        self.rsid_filter = rsid_filter
+
+    def run(self) -> None:
+        try:
+            summary = import_clinvar_snapshot(
+                file_path=self.file_path,
+                db_path=self.db_path,
+                replace=True,
+                rsid_filter=self.rsid_filter,
+            )
+            self.finished.emit(summary)
+        except Exception as exc:  # pragma: no cover - UI only
+            self.error.emit(str(exc))
 
 
 def _setup_logging(log_dir: Path) -> None:
@@ -76,6 +100,42 @@ def main() -> int:
     seed_clinvar_if_missing(state.db)
     window = MainWindow(state)
     window.show()
+
+    def _maybe_auto_import_clinvar() -> None:
+        file_path = auto_import_path(data_dir)
+        if not file_path:
+            return
+        rsid_filter = state.db.get_all_rsids()
+        if not rsid_filter:
+            logging.info("ClinVar auto-import skipped: no rsIDs available yet.")
+            return
+        thread = QThread(window)
+        worker = ClinVarAutoWorker(state.db_path, file_path, rsid_filter)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda summary: _on_auto_import_done(summary, thread, worker))
+        worker.error.connect(lambda message: _on_auto_import_error(message, thread, worker))
+        thread.start()
+
+    def _on_auto_import_done(summary: dict, thread: QThread, worker: ClinVarAutoWorker) -> None:
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        if summary.get("skipped"):
+            logging.info("ClinVar auto-import skipped: %s", summary.get("reason", "unknown"))
+        else:
+            logging.info("ClinVar auto-imported %s variants.", summary.get("variant_count", 0))
+            state.data_changed.emit()
+
+    def _on_auto_import_error(message: str, thread: QThread, worker: ClinVarAutoWorker) -> None:
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        logging.error("ClinVar auto-import failed: %s", message)
+
+    QTimer.singleShot(0, _maybe_auto_import_clinvar)
     exit_code = app.exec()
     state.close()
     save_settings(settings)
