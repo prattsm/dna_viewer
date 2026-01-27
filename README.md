@@ -33,6 +33,11 @@ pip install -e ".[dev]"
 dna-insights
 ```
 
+If the CLI entry point is not on your PATH yet, run:
+```bash
+python3 -m dna_insights
+```
+
 ## Tests
 ```bash
 pytest
@@ -62,7 +67,8 @@ The curated knowledge base ships with a small, conservative set of modules:
 Each module includes evidence grading, limitations, and references that appear in reports.
 
 ## ClinVar snapshot import (optional)
-- Import a local ClinVar VCF/VCF.GZ snapshot in **Settings**.
+- The app ships with a small bundled ClinVar snapshot so clinical references work out of the box.
+- Import a local ClinVar VCF/VCF.GZ snapshot in **Settings** to replace the bundled data with a larger dataset.
 - Only high-confidence review statuses (expert panel or practice guideline) and pathogenic/likely pathogenic entries are stored.
 - Any clinical references are informational only and require clinical confirmation.
 
