@@ -58,6 +58,28 @@ def _is_pathogenic(cln_sig: str) -> bool:
     return bool(values & PATHOGENIC_LABELS)
 
 
+def classify_clinvar(clinical_significance: str, review_status: str) -> dict:
+    values = {value.lower() for value in _split_values(clinical_significance)}
+    review_lower = review_status.lower().replace(" ", "_")
+
+    conflict = any("conflicting" in value for value in values)
+    if "conflict" in review_lower and "no_conflicts" not in review_lower:
+        conflict = True
+
+    if _is_high_confidence(review_status):
+        confidence = "High"
+    elif "criteria_provided" in review_lower and "multiple_submitters" in review_lower and "no_conflicts" in review_lower:
+        confidence = "Moderate"
+    elif "criteria_provided" in review_lower or "single_submitter" in review_lower:
+        confidence = "Low"
+    elif "no_assertion" in review_lower:
+        confidence = "Low"
+    else:
+        confidence = "Unknown"
+
+    return {"confidence": confidence, "conflict": conflict}
+
+
 def _open_text(path: Path):
     if path.suffix.lower() == ".gz":
         return gzip.open(path, "rt", encoding="utf-8", errors="replace")
@@ -125,8 +147,6 @@ def _iter_variant_summary(*, file_path: Path, rsid_filter: set[str] | None):
 
             clnsig = parts[clnsig_idx].strip() if clnsig_idx < len(parts) else ""
             review = parts[review_idx].strip() if review_idx < len(parts) else ""
-            if not (_is_high_confidence(review) and _is_pathogenic(clnsig)):
-                continue
 
             chrom = parts[chrom_idx].strip() if chrom_idx is not None and chrom_idx < len(parts) else ""
             pos_raw = parts[pos_idx].strip() if pos_idx is not None and pos_idx < len(parts) else ""
@@ -195,9 +215,10 @@ def seed_clinvar_if_missing(db: Database) -> dict:
 
 def packaged_clinvar_path() -> Path | None:
     base = Path(__file__).resolve().parents[1] / "knowledge_base" / "clinvar_full"
-    candidate = base / "variant_summary.txt.gz"
-    if candidate.exists():
-        return candidate
+    for name in ("variant_summary.txt.gz", "variant_summary.txt"):
+        candidate = base / name
+        if candidate.exists():
+            return candidate
     return None
 
 
@@ -264,8 +285,6 @@ def import_clinvar_snapshot(
                 info_map = _parse_info(info)
                 clnsig = info_map.get("CLNSIG", "")
                 review = info_map.get("CLNREVSTAT", "")
-                if not (_is_high_confidence(review) and _is_pathogenic(clnsig)):
-                    continue
                 if rsid_filter is not None and rsid not in rsid_filter:
                     continue
 

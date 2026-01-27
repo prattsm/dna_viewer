@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dna_insights.core.clinvar import classify_clinvar
 from dna_insights.core.models import EvidenceLevel, KnowledgeModule, QCReport
 from dna_insights.core.utils import canonical_genotype
 
@@ -72,13 +73,21 @@ def build_qc_result(qc: QCReport) -> dict:
 
 
 def build_clinvar_summary(match_count: int, sample: list[dict], import_meta: dict | None) -> dict:
-    sample_text = ", ".join(item["rsid"] for item in sample) if sample else "None"
+    if sample:
+        sample_parts = []
+        for item in sample:
+            flags = classify_clinvar(item.get("clinical_significance", ""), item.get("review_status", ""))
+            conflict_tag = "conflict" if flags["conflict"] else flags["confidence"].lower()
+            sample_parts.append(f"{item['rsid']} ({conflict_tag})")
+        sample_text = ", ".join(sample_parts)
+    else:
+        sample_text = "None"
     import_note = ""
     if import_meta:
         import_note = f" ClinVar snapshot imported {import_meta.get('imported_at', '')}."
     summary = (
         f"Found {match_count} rsIDs in your data that appear in the ClinVar snapshot."
-        f" Example matches: {sample_text}.{import_note}"
+        f" Example matches: {sample_text}.{import_note} Confidence and conflicts are shown per variant."
     )
     return {
         "module_id": "clinical_summary",
@@ -89,7 +98,8 @@ def build_clinvar_summary(match_count: int, sample: list[dict], import_meta: dic
         "evidence_level": EvidenceLevel(grade="A", summary="ClinVar listing reference only.").model_dump(),
         "limitations": (
             "SNP chip results can be wrong and do not confirm clinical significance. "
-            "Only high-confidence ClinVar entries are shown, and clinical confirmation is required."
+            "ClinVar entries include multiple confidence levels and may have conflicting interpretations. "
+            "Clinical confirmation is required."
         ),
         "references": ["ClinVar (NCBI) snapshot"],
         "genotypes": {},

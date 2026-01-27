@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
+from dna_insights.core.clinvar import classify_clinvar
 from dna_insights.core.insight_engine import evaluate_modules
 
 
@@ -54,9 +55,15 @@ class VariantExplorerPage(QWidget):
             if self.state.settings.opt_in_categories.get("clinical", False):
                 clinvar_info = self.state.db.get_clinvar_variant(rsid)
             if clinvar_info:
+                flags = classify_clinvar(
+                    clinvar_info.get("clinical_significance", ""),
+                    clinvar_info.get("review_status", ""),
+                )
+                conflict_text = "Yes" if flags["conflict"] else "No"
                 extra = (
                     f"\nClinVar: {clinvar_info.get('clinical_significance', '')}"
                     f" (review: {clinvar_info.get('review_status', '')})"
+                    f"\nConfidence: {flags['confidence']}; Conflicting interpretations: {conflict_text}"
                 )
                 self.result_label.setText(base_text + extra)
             else:
@@ -70,8 +77,14 @@ class VariantExplorerPage(QWidget):
         if self.state.settings.opt_in_categories.get("clinical", False):
             clinvar_info = self.state.db.get_clinvar_variant(rsid)
         if clinvar_info:
+            flags = classify_clinvar(
+                clinvar_info.get("clinical_significance", ""),
+                clinvar_info.get("review_status", ""),
+            )
+            conflict_text = "Yes" if flags["conflict"] else "No"
             summaries += (
                 f"\nClinVar: {clinvar_info.get('clinical_significance', '')}"
                 f" (review: {clinvar_info.get('review_status', '')})"
+                f"\nConfidence: {flags['confidence']}; Conflicting interpretations: {conflict_text}"
             )
         self.result_label.setText(base_text + "\n" + summaries)

@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from dna_insights.core.clinvar import import_clinvar_snapshot, seed_clinvar_if_missing, seed_metadata
+from dna_insights.core.clinvar import (
+    classify_clinvar,
+    import_clinvar_snapshot,
+    seed_clinvar_if_missing,
+    seed_metadata,
+)
 from dna_insights.core.db import Database
 
 
@@ -9,12 +14,12 @@ def test_clinvar_import(tmp_path: Path) -> None:
     sample_path = Path("tests/fixtures/clinvar_sample.vcf")
 
     summary = import_clinvar_snapshot(file_path=sample_path, db_path=db_path)
-    assert summary["variant_count"] == 1
+    assert summary["variant_count"] == 3
 
     db = Database(db_path)
     assert db.get_clinvar_variant("rs123") is not None
-    assert db.get_clinvar_variant("rs456") is None
-    assert db.get_clinvar_variant("rs789") is None
+    assert db.get_clinvar_variant("rs456") is not None
+    assert db.get_clinvar_variant("rs789") is not None
     db.close()
 
 
@@ -44,4 +49,10 @@ def test_variant_summary_import(tmp_path: Path) -> None:
         db_path=db_path,
         rsid_filter={"rs123", "rs456", "rs789"},
     )
-    assert summary["variant_count"] == 1
+    assert summary["variant_count"] == 3
+
+
+def test_clinvar_classification() -> None:
+    flags = classify_clinvar("Conflicting interpretations of pathogenicity", "criteria provided, single submitter")
+    assert flags["conflict"] is True
+    assert flags["confidence"] == "Low"
