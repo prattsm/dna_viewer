@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -21,6 +21,16 @@ from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot
 from dna_insights.core.importer import import_ancestry_file
 from dna_insights.core.parser import list_zip_txt_members
 from dna_insights.ui.widgets import prompt_passphrase
+
+
+class AutoCloseComboBox(QComboBox):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.view().pressed.connect(self._on_pressed)
+
+    def _on_pressed(self, index) -> None:
+        self.setCurrentIndex(index.row())
+        self.hidePopup()
 
 
 class ImportWorker(QObject):
@@ -69,7 +79,7 @@ class ImportPage(QWidget):
         self.file_input = QLineEdit()
         self.file_input.setReadOnly(True)
         self.browse_button = QPushButton("Browse")
-        self.mode_combo = QComboBox()
+        self.mode_combo = AutoCloseComboBox()
         self.mode_combo.addItems(["curated", "full"])
         self.import_button = QPushButton("Start import")
         self.summary_label = QLabel("")
@@ -92,9 +102,6 @@ class ImportPage(QWidget):
 
         self.browse_button.clicked.connect(self._choose_file)
         self.import_button.clicked.connect(self._start_import)
-        self.mode_combo.activated.connect(
-            lambda _index: QTimer.singleShot(0, self.mode_combo.hidePopup)
-        )
         self.state.data_changed.connect(self._refresh_profiles)
         self.state.profile_changed.connect(self._sync_current_profile)
 
