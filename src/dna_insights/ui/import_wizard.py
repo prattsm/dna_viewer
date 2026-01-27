@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import traceback
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
+import threading
+
+from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from dna_insights.app_state import AppState
 from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot
+from dna_insights.core.exceptions import ImportCancelled
 from dna_insights.core.importer import import_ancestry_file
 from dna_insights.core.parser import list_zip_txt_members
 from dna_insights.ui.widgets import prompt_passphrase
@@ -42,6 +45,7 @@ class ImportWorker(QObject):
     stage = Signal(str)
     detail = Signal(int, int, float)
     finished = Signal(object)
+    canceled = Signal()
     error = Signal(str)
 
     def __init__(
@@ -53,6 +57,13 @@ class ImportWorker(QObject):
         self.file_path = file_path
         self.mode = mode
         self.zip_member = zip_member
+        self._cancel_event = threading.Event()
+
+    def request_cancel(self) -> None:
+        self._cancel_event.set()
+
+    def _cancel_check(self) -> bool:
+        return self._cancel_event.is_set()
 
     def run(self) -> None:
         try:
@@ -69,8 +80,11 @@ class ImportWorker(QObject):
                 on_progress=self.progress.emit,
                 on_stage=self.stage.emit,
                 on_progress_detail=self.detail.emit,
+                cancel_check=self._cancel_check,
             )
             self.finished.emit(summary)
+        except ImportCancelled:
+            self.canceled.emit()
         except Exception:  # pragma: no cover - UI only
             self.error.emit(traceback.format_exc())
 
@@ -83,6 +97,7 @@ class ImportPage(QWidget):
         self._import_thread: QThread | None = None
         self._import_worker: ImportWorker | None = None
         self._import_progress: QProgressDialog | None = None
+        self._import_status: dict[str, object] | None = None
         self._clinvar_thread: QThread | None = None
         self._clinvar_worker: ClinVarAutoWorker | None = None
         self._clinvar_progress: QProgressDialog | None = None
@@ -199,10 +214,10 @@ class ImportPage(QWidget):
             return
         mode = self.mode_combo.currentText()
 
-        progress = QProgressDialog("Importing data...", "", 0, 100, self)
+        progress = QProgressDialog("Importing data...", "Cancel", 0, 100, self)
         progress.setWindowTitle("Import")
         progress.setAutoClose(False)
-        progress.setCancelButton(None)
+        progress.setAutoReset(False)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.show()
         self._import_progress = progress
@@ -219,53 +234,8 @@ class ImportPage(QWidget):
             "percent": 0,
             "visual_percent": 0,
         }
-
-        def update_label() -> None:
-            label = status["stage"]
-            if status["visual_percent"]:
-                label += f" — {status['visual_percent']}%"
-            if status["count"]:
-                label += f" ({status['count']} markers)"
-            if status["eta"] > 0:
-                minutes, seconds = divmod(int(status["eta"]), 60)
-                hours, minutes = divmod(minutes, 60)
-                if hours:
-                    eta_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                else:
-                    eta_text = f"{minutes:02d}:{seconds:02d}"
-                label += f" — ETA {eta_text}"
-            progress.setLabelText(label)
-
-        def on_progress(count: int) -> None:
-            status["count"] = count
-            update_label()
-
-        def on_stage(stage: str) -> None:
-            status["stage"] = stage
-            status["eta"] = 0.0
-            if stage == "Writing genotypes...":
-                status["visual_percent"] = max(status["visual_percent"], 95)
-                progress.setValue(status["visual_percent"])
-            elif stage == "Generating insights...":
-                status["visual_percent"] = max(status["visual_percent"], 98)
-                progress.setValue(status["visual_percent"])
-            update_label()
-
-        def on_detail(percent: int, _bytes_read: int, eta_seconds: float) -> None:
-            status["percent"] = percent
-            status["eta"] = eta_seconds
-            stage = status["stage"]
-            if stage.startswith("Preparing"):
-                visual = int(percent * 0.1)
-            elif stage.startswith("Parsing"):
-                visual = 10 + int(percent * 0.8)
-            else:
-                visual = status["visual_percent"]
-            status["visual_percent"] = max(status["visual_percent"], min(visual, 99))
-            progress.setValue(status["visual_percent"])
-            update_label()
-
-        update_label()
+        self._import_status = status
+        self._update_import_label()
 
         self._import_thread = QThread(self)
         self._import_worker = ImportWorker(self.state, profile_id, file_path, mode, self._zip_member)
@@ -274,34 +244,116 @@ class ImportPage(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
         worker.error.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
+        worker.canceled.connect(worker.deleteLater)
         worker.error.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._cleanup_import_refs)
         thread.finished.connect(self._reenable_import_ui)
         thread.finished.connect(self._maybe_start_clinvar_after_import)
-        worker.finished.connect(lambda summary: self._finish_import(summary, progress), Qt.ConnectionType.QueuedConnection)
-        worker.error.connect(lambda message: self._fail_import(message, progress), Qt.ConnectionType.QueuedConnection)
-        worker.progress.connect(on_progress, Qt.ConnectionType.QueuedConnection)
-        worker.stage.connect(on_stage, Qt.ConnectionType.QueuedConnection)
-        worker.detail.connect(on_detail, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(self._finish_import, Qt.ConnectionType.QueuedConnection)
+        worker.canceled.connect(self._cancelled_import, Qt.ConnectionType.QueuedConnection)
+        worker.error.connect(self._fail_import, Qt.ConnectionType.QueuedConnection)
+        worker.progress.connect(self._on_import_progress, Qt.ConnectionType.QueuedConnection)
+        worker.stage.connect(self._on_import_stage, Qt.ConnectionType.QueuedConnection)
+        worker.detail.connect(self._on_import_detail, Qt.ConnectionType.QueuedConnection)
+        progress.canceled.connect(self._cancel_import)
         thread.start()
 
-    def _finish_import(self, summary, progress) -> None:
-        progress.setValue(100)
-        progress.close()
+    @Slot(int)
+    def _on_import_progress(self, count: int) -> None:
+        if not self._import_status:
+            return
+        self._import_status["count"] = count
+        self._update_import_label()
+
+    @Slot(str)
+    def _on_import_stage(self, stage: str) -> None:
+        if not self._import_status:
+            return
+        self._import_status["stage"] = stage
+        self._import_status["eta"] = 0.0
+        if stage == "Writing genotypes...":
+            self._import_status["visual_percent"] = max(self._import_status["visual_percent"], 95)
+        elif stage == "Generating insights...":
+            self._import_status["visual_percent"] = max(self._import_status["visual_percent"], 98)
+        self._update_import_label()
+
+    @Slot(int, int, float)
+    def _on_import_detail(self, percent: int, _bytes_read: int, eta_seconds: float) -> None:
+        if not self._import_status:
+            return
+        self._import_status["percent"] = percent
+        self._import_status["eta"] = eta_seconds
+        stage = self._import_status["stage"]
+        if stage.startswith("Preparing"):
+            visual = int(percent * 0.1)
+        elif stage.startswith("Parsing"):
+            visual = 10 + int(percent * 0.8)
+        else:
+            visual = int(self._import_status["visual_percent"])
+        self._import_status["visual_percent"] = max(self._import_status["visual_percent"], min(visual, 99))
+        self._update_import_label()
+
+    def _update_import_label(self) -> None:
+        if not self._import_status or not self._import_progress:
+            return
+        status = self._import_status
+        label = status["stage"]
+        if status["visual_percent"]:
+            label += f" — {status['visual_percent']}%"
+        if status["count"]:
+            label += f" ({status['count']} markers)"
+        if status["eta"] > 0:
+            minutes, seconds = divmod(int(status["eta"]), 60)
+            hours, minutes = divmod(minutes, 60)
+            if hours:
+                eta_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            else:
+                eta_text = f"{minutes:02d}:{seconds:02d}"
+            label += f" — ETA {eta_text}"
+        self._import_progress.setLabelText(label)
+        self._import_progress.setValue(int(status["visual_percent"]))
+
+    @Slot(object)
+    def _finish_import(self, summary) -> None:
+        if self._import_progress:
+            self._import_progress.setValue(100)
+            self._import_progress.close()
         self.summary_label.setText(
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
         )
         self.state.data_changed.emit()
         self._last_import_ok = True
 
-    def _fail_import(self, message: str, progress) -> None:
-        progress.setValue(0)
-        progress.close()
+    @Slot()
+    def _cancelled_import(self) -> None:
+        if self._import_progress:
+            self._import_progress.setValue(0)
+            self._import_progress.close()
+        self._last_import_ok = False
+        self.summary_label.setText("Import cancelled.")
+
+    @Slot(str)
+    def _fail_import(self, message: str) -> None:
+        if self._import_progress:
+            self._import_progress.setValue(0)
+            self._import_progress.close()
         self._last_import_ok = False
         QMessageBox.critical(self, "Import failed", message)
+
+    def _cancel_import(self) -> None:
+        if not self._import_worker:
+            return
+        self._import_worker.request_cancel()
+        if self._import_status:
+            self._import_status["stage"] = "Cancelling..."
+            self._import_status["eta"] = 0.0
+            self._update_import_label()
+        if self._import_progress and self._import_progress.cancelButton():
+            self._import_progress.cancelButton().setEnabled(False)
 
     def _maybe_start_clinvar_after_import(self) -> None:
         if self._last_import_ok:
@@ -371,6 +423,7 @@ class ImportPage(QWidget):
         self._import_thread = None
         self._import_worker = None
         self._import_progress = None
+        self._import_status = None
 
     def _cleanup_clinvar_refs(self) -> None:
         self._clinvar_thread = None
