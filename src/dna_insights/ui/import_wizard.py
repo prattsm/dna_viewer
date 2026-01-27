@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -92,7 +92,9 @@ class ImportPage(QWidget):
 
         self.browse_button.clicked.connect(self._choose_file)
         self.import_button.clicked.connect(self._start_import)
-        self.mode_combo.activated.connect(lambda _index: self.mode_combo.hidePopup())
+        self.mode_combo.activated.connect(
+            lambda _index: QTimer.singleShot(0, self.mode_combo.hidePopup)
+        )
         self.state.data_changed.connect(self._refresh_profiles)
         self.state.profile_changed.connect(self._sync_current_profile)
 
@@ -190,14 +192,19 @@ class ImportPage(QWidget):
         worker.error.connect(
             lambda message: self._fail_import(message, progress, thread, worker), Qt.QueuedConnection
         )
+        thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         worker.progress.connect(lambda count: status.update({"count": count}) or update_label(), Qt.QueuedConnection)
         worker.stage.connect(lambda stage: status.update({"stage": stage}) or update_label(), Qt.QueuedConnection)
         thread.start()
 
     def _finish_import(self, summary, progress, thread, worker) -> None:
+        try:
+            worker.progress.disconnect()
+            worker.stage.disconnect()
+        except TypeError:
+            pass
         progress.close()
-        worker.deleteLater()
         thread.quit()
         self.summary_label.setText(
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
@@ -206,8 +213,12 @@ class ImportPage(QWidget):
         self._maybe_auto_import_clinvar()
 
     def _fail_import(self, message: str, progress, thread, worker) -> None:
+        try:
+            worker.progress.disconnect()
+            worker.stage.disconnect()
+        except TypeError:
+            pass
         progress.close()
-        worker.deleteLater()
         thread.quit()
         QMessageBox.critical(self, "Import failed", message)
 
@@ -239,12 +250,16 @@ class ImportPage(QWidget):
         worker.error.connect(
             lambda message: self._fail_clinvar(message, progress, thread, worker), Qt.QueuedConnection
         )
+        thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.start()
 
     def _finish_clinvar(self, summary: dict, progress, thread, worker) -> None:
+        try:
+            worker.progress.disconnect()
+        except TypeError:
+            pass
         progress.close()
-        worker.deleteLater()
         thread.quit()
         if summary.get("skipped"):
             return
@@ -254,8 +269,11 @@ class ImportPage(QWidget):
         self.state.data_changed.emit()
 
     def _fail_clinvar(self, message: str, progress, thread, worker) -> None:
+        try:
+            worker.progress.disconnect()
+        except TypeError:
+            pass
         progress.close()
-        worker.deleteLater()
         thread.quit()
         QMessageBox.warning(self, "ClinVar import failed", message)
 
