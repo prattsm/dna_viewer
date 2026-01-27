@@ -31,6 +31,8 @@ def import_ancestry_file(
     encryption: EncryptionManager | None = None,
     on_progress: Callable[[int], None] | None = None,
 ) -> ImportSummary:
+    if file_path.suffix.lower() != ".txt":
+        raise ValueError("Only .txt Ancestry raw data files are supported. Please unzip and select the .txt file.")
     if mode not in {"curated", "full"}:
         raise ValueError("mode must be 'curated' or 'full'")
 

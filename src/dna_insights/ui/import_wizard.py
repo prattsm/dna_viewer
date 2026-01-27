@@ -72,7 +72,7 @@ class ImportPage(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Profile"))
         layout.addWidget(self.profile_combo)
-        layout.addWidget(QLabel("Ancestry raw data file (.txt or .zip)"))
+        layout.addWidget(QLabel("Ancestry raw data file (.txt)"))
         layout.addLayout(file_row)
         layout.addWidget(QLabel("Import mode"))
         layout.addWidget(self.mode_combo)
@@ -108,7 +108,7 @@ class ImportPage(QWidget):
             self,
             "Select AncestryDNA raw data",
             "",
-            "Raw data (*.txt *.zip)",
+            "Raw data (*.txt)",
         )
         if file_path:
             self.file_input.setText(file_path)

@@ -70,7 +70,7 @@ def close_ancestry_handle(handle: io.TextIOBase) -> None:
 
 def open_ancestry_file(path: Path) -> io.TextIOBase:
     if path.suffix.lower() == ".zip":
-        return _open_text_from_zip(path)
+        raise ValueError("Zip files are not supported. Please unzip and select the .txt file.")
     return path.open("r", encoding="utf-8", errors="replace")
 
 

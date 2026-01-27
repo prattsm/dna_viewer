@@ -6,7 +6,7 @@ DNA Insights is a local-first desktop app for importing **AncestryDNA raw data**
 
 ## Features (MVP)
 - Local profiles with isolated data
-- Import AncestryDNA raw data (.txt or .zip)
+- Import AncestryDNA raw data (.txt)
 - Curated insights (nutrition + wellness) with evidence grades and limitations
 - QC metrics (call rate, malformed rows, duplicates, X/Y consistency check)
 - Variant explorer (search rsID)
@@ -45,7 +45,7 @@ pytest
 
 ## User Guide
 - **Profiles:** Create a profile for each person. All data stays local.
-- **Import:** Choose a raw data file and import in curated (default) or full mode. Import runs in the background.
+- **Import:** Choose the raw data `.txt` file and import in curated (default) or full mode. If you downloaded a zip, unzip it first to get the `.txt`.
 - **Insights:** Review evidence-graded findings with limitations and genotype context.
 - **Variant Explorer:** Search by rsID to see your genotype and any matching module interpretation.
 - **Report Export:** Export HTML or PDF reports; optional encryption is available.
