@@ -113,26 +113,34 @@ def parse_ancestry_handle(
     seen_rsids: set[str] = set()
     header_checked = False
     header_has_ancestry = False
+    comment_lines_checked = 0
 
     bytes_read = 0
     for line_number, line in enumerate(handle, start=1):
         if on_bytes:
+            # Approximate bytes for progress/ETA; zip members may not match compressed sizes.
             bytes_read += len(line.encode("utf-8", errors="ignore"))
             if bytes_read % (1024 * 256) < len(line):
                 on_bytes(bytes_read)
         if line.startswith("#"):
-            if not header_checked and "ancestry" in line.lower():
-                header_has_ancestry = True
-            if line_number > 20:
-                header_checked = True
+            if not header_checked and comment_lines_checked < 100:
+                comment_lines_checked += 1
+                if "ancestry" in line.lower():
+                    header_has_ancestry = True
+                if comment_lines_checked >= 100:
+                    header_checked = True
             continue
 
-        if not header_checked and line_number > 20:
+        if not header_checked:
             header_checked = True
 
         parts = line.strip().split()
         if len(parts) < 5:
             stats.malformed_rows += 1
+            continue
+
+        if parts[0].lower() == "rsid":
+            header_has_ancestry = True
             continue
 
         rsid, chrom_raw, pos_raw, allele1, allele2 = parts[:5]

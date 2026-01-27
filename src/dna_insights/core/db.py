@@ -8,16 +8,19 @@ from typing import Iterable
 from dna_insights.core.utils import safe_uuid, utc_now_iso
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Database:
     def __init__(self, db_path: Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, timeout=30)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA journal_mode = WAL")
+        self.conn.execute("PRAGMA synchronous = NORMAL")
+        self.conn.execute("PRAGMA busy_timeout = 5000")
         self._migrate()
 
     def close(self) -> None:
@@ -46,6 +49,9 @@ class Database:
                     parser_version TEXT NOT NULL,
                     build TEXT NOT NULL,
                     strand TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'ok',
+                    error_message TEXT,
+                    zip_member TEXT,
                     FOREIGN KEY(profile_id) REFERENCES profiles(id)
                 );
 
@@ -109,6 +115,16 @@ class Database:
                 """
             )
 
+        if version < 3:
+            cur = self.conn.execute("PRAGMA table_info(imports)")
+            existing = {row["name"] for row in cur.fetchall()}
+            if "status" not in existing:
+                self.conn.execute("ALTER TABLE imports ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'")
+            if "error_message" not in existing:
+                self.conn.execute("ALTER TABLE imports ADD COLUMN error_message TEXT")
+            if "zip_member" not in existing:
+                self.conn.execute("ALTER TABLE imports ADD COLUMN zip_member TEXT")
+
         if version < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             self.conn.commit()
@@ -168,18 +184,43 @@ class Database:
         build: str,
         strand: str,
         imported_at: str | None = None,
+        status: str = "ok",
+        error_message: str | None = None,
+        zip_member: str | None = None,
     ) -> tuple[str, str]:
         import_id = safe_uuid()
         timestamp = imported_at or utc_now_iso()
         self.conn.execute(
             """
-            INSERT INTO imports (id, profile_id, source, file_hash_sha256, imported_at, parser_version, build, strand)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO imports (
+                id, profile_id, source, file_hash_sha256, imported_at, parser_version, build, strand,
+                status, error_message, zip_member
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (import_id, profile_id, source, file_hash_sha256, timestamp, parser_version, build, strand),
+            (
+                import_id,
+                profile_id,
+                source,
+                file_hash_sha256,
+                timestamp,
+                parser_version,
+                build,
+                strand,
+                status,
+                error_message,
+                zip_member,
+            ),
         )
         self.conn.commit()
         return import_id, timestamp
+
+    def update_import_status(self, import_id: str, status: str, error_message: str | None = None) -> None:
+        self.conn.execute(
+            "UPDATE imports SET status = ?, error_message = ? WHERE id = ?",
+            (status, error_message, import_id),
+        )
+        self.conn.commit()
 
     def insert_genotypes_curated(self, rows: Iterable[tuple]) -> None:
         self.conn.executemany(
@@ -197,6 +238,12 @@ class Database:
 
     def commit(self) -> None:
         self.conn.commit()
+
+    def begin(self) -> None:
+        self.conn.execute("BEGIN")
+
+    def rollback(self) -> None:
+        self.conn.rollback()
 
     def get_curated_genotypes(self, profile_id: str) -> dict[str, dict]:
         cur = self.conn.execute(
@@ -261,7 +308,8 @@ class Database:
     def get_latest_import(self, profile_id: str) -> dict | None:
         cur = self.conn.execute(
             """
-            SELECT id, profile_id, source, file_hash_sha256, imported_at, parser_version, build, strand
+            SELECT id, profile_id, source, file_hash_sha256, imported_at, parser_version, build, strand,
+                   status, error_message, zip_member
             FROM imports
             WHERE profile_id = ?
             ORDER BY imported_at DESC
@@ -323,11 +371,14 @@ class Database:
         self.conn.commit()
 
     def get_all_rsids(self) -> set[str]:
-        cur = self.conn.execute("SELECT rsid FROM genotypes_full")
-        rsids = {row["rsid"] for row in cur.fetchall()}
-        cur = self.conn.execute("SELECT rsid FROM genotypes_curated")
-        rsids.update(row["rsid"] for row in cur.fetchall())
-        return rsids
+        cur = self.conn.execute(
+            """
+            SELECT DISTINCT rsid FROM genotypes_full
+            UNION
+            SELECT DISTINCT rsid FROM genotypes_curated
+            """
+        )
+        return {row["rsid"] for row in cur.fetchall()}
 
     def _has_full_genotypes(self, profile_id: str) -> bool:
         cur = self.conn.execute(
