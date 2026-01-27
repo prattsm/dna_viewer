@@ -214,7 +214,7 @@ class ImportPage(QWidget):
 
         status = {
             "count": 0,
-            "stage": "Parsing raw data...",
+            "stage": "Preparing raw file...",
             "eta": 0.0,
             "percent": 0,
             "visual_percent": 0,
@@ -242,6 +242,7 @@ class ImportPage(QWidget):
 
         def on_stage(stage: str) -> None:
             status["stage"] = stage
+            status["eta"] = 0.0
             if stage == "Writing genotypes...":
                 status["visual_percent"] = max(status["visual_percent"], 95)
                 progress.setValue(status["visual_percent"])
@@ -253,7 +254,14 @@ class ImportPage(QWidget):
         def on_detail(percent: int, _bytes_read: int, eta_seconds: float) -> None:
             status["percent"] = percent
             status["eta"] = eta_seconds
-            status["visual_percent"] = max(status["visual_percent"], int(percent * 0.9))
+            stage = status["stage"]
+            if stage.startswith("Preparing"):
+                visual = int(percent * 0.1)
+            elif stage.startswith("Parsing"):
+                visual = 10 + int(percent * 0.8)
+            else:
+                visual = status["visual_percent"]
+            status["visual_percent"] = max(status["visual_percent"], min(visual, 99))
             progress.setValue(status["visual_percent"])
             update_label()
 

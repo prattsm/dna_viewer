@@ -187,8 +187,9 @@ class Database:
         status: str = "ok",
         error_message: str | None = None,
         zip_member: str | None = None,
+        import_id: str | None = None,
     ) -> tuple[str, str]:
-        import_id = safe_uuid()
+        import_id = import_id or safe_uuid()
         timestamp = imported_at or utc_now_iso()
         self.conn.execute(
             """

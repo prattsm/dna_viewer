@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import shutil
+import hashlib
+import logging
 import time
 from pathlib import Path
 from typing import Callable
@@ -18,12 +19,69 @@ from dna_insights.core.parser import (
     parse_ancestry_handle,
 )
 from dna_insights.core.security import EncryptionManager
-from dna_insights.core.utils import sha256_file, utc_now_iso
+from dna_insights.core.utils import safe_uuid, utc_now_iso
 
 
 def _write_bytes(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+
+
+def _hash_and_store_raw(
+    *,
+    file_path: Path,
+    raw_path: Path,
+    encryption: EncryptionManager | None,
+    on_progress_detail: Callable[[int, int, float], None] | None,
+) -> str:
+    try:
+        total_bytes = int(file_path.stat().st_size)
+    except FileNotFoundError:
+        total_bytes = 0
+
+    hasher = hashlib.sha256()
+    bytes_read = 0
+    last_emit = 0
+    start_time = time.monotonic()
+
+    def maybe_emit() -> None:
+        if not on_progress_detail or total_bytes <= 0:
+            return
+        nonlocal last_emit
+        if bytes_read - last_emit < 256 * 1024 and bytes_read < total_bytes:
+            return
+        last_emit = bytes_read
+        elapsed = max(time.monotonic() - start_time, 0.001)
+        rate = bytes_read / elapsed
+        percent = min(int((bytes_read / total_bytes) * 100), 100)
+        remaining = max(total_bytes - bytes_read, 0)
+        eta_seconds = remaining / rate if rate > 0 else 0.0
+        on_progress_detail(percent, bytes_read, eta_seconds)
+
+    if encryption and encryption.is_enabled():
+        if not encryption.has_key():
+            raise RuntimeError("Encryption is enabled but passphrase has not been provided.")
+        buffer = bytearray()
+        with file_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                hasher.update(chunk)
+                buffer.extend(chunk)
+                bytes_read += len(chunk)
+                maybe_emit()
+        encrypted = encryption.encrypt_bytes(bytes(buffer))
+        _write_bytes(raw_path, encrypted)
+    else:
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        with file_path.open("rb") as src, raw_path.open("wb") as dst:
+            for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                hasher.update(chunk)
+                dst.write(chunk)
+                bytes_read += len(chunk)
+                maybe_emit()
+
+    if on_progress_detail and total_bytes > 0:
+        on_progress_detail(100, bytes_read, 0.0)
+    return hasher.hexdigest()
 
 
 def _format_import_error(exc: Exception) -> str:
@@ -51,16 +109,36 @@ def import_ancestry_file(
     if mode not in {"curated", "full"}:
         raise ValueError("mode must be 'curated' or 'full'")
 
-    if on_stage:
-        on_stage("Parsing raw data...")
-    file_hash = sha256_file(file_path)
     curated_set = curated_rsids(modules)
 
     db = Database(db_path)
-    import_id: str | None = None
+    import_id: str | None = safe_uuid()
     imported_at = utc_now_iso()
 
     try:
+        if on_stage:
+            on_stage("Preparing raw file...")
+
+        raw_suffix = ".enc" if encryption and encryption.is_enabled() else file_path.suffix
+        raw_path = db_path.parent / "raw" / f"{import_id}{raw_suffix}"
+        prep_start = time.monotonic()
+        file_hash = _hash_and_store_raw(
+            file_path=file_path,
+            raw_path=raw_path,
+            encryption=encryption,
+            on_progress_detail=on_progress_detail,
+        )
+        prep_duration = max(time.monotonic() - prep_start, 0.001)
+        try:
+            file_size = file_path.stat().st_size
+        except FileNotFoundError:
+            file_size = 0
+        logging.info(
+            "Prepared raw file in %.2fs (%.1f MB).",
+            prep_duration,
+            file_size / (1024 * 1024),
+        )
+
         import_id, imported_at = db.add_import(
             profile_id=profile_id,
             source="ancestry",
@@ -71,26 +149,18 @@ def import_ancestry_file(
             imported_at=imported_at,
             status="running",
             zip_member=zip_member,
+            import_id=import_id,
         )
 
-        if encryption and encryption.is_enabled():
-            if not encryption.has_key():
-                raise RuntimeError("Encryption is enabled but passphrase has not been provided.")
-            raw_bytes = file_path.read_bytes()
-            encrypted = encryption.encrypt_bytes(raw_bytes)
-            raw_path = db_path.parent / "raw" / f"{import_id}.enc"
-            _write_bytes(raw_path, encrypted)
-        else:
-            raw_path = db_path.parent / "raw" / f"{import_id}{file_path.suffix}"
-            raw_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(file_path, raw_path)
+        if on_stage:
+            on_stage("Parsing raw data...")
 
         curated_rows: list[tuple] = []
         full_rows: list[tuple] = []
         curated_map: dict[str, dict] = {}
 
-        curated_batch = 1000
-        full_batch = 5000
+        curated_batch = 2000
+        full_batch = 20000
 
         def on_record(record):
             if record.rsid in curated_set:
@@ -131,12 +201,21 @@ def import_ancestry_file(
 
         handle = open_ancestry_file(file_path, member=zip_member)
         try:
+            logging.info("Import starting: mode=%s zip_member=%s", mode, zip_member or "")
             db.begin()
+            parse_start = time.monotonic()
             stats = parse_ancestry_handle(
                 handle,
                 on_record=on_record,
                 on_progress=on_progress,
                 on_bytes=on_bytes,
+            )
+            parse_duration = max(time.monotonic() - parse_start, 0.001)
+            logging.info(
+                "Parsed %s markers in %.2fs (%.0f markers/sec).",
+                stats.total_markers,
+                parse_duration,
+                stats.total_markers / parse_duration,
             )
 
             if on_stage:
@@ -167,9 +246,11 @@ def import_ancestry_file(
 
         if on_stage:
             on_stage("Generating insights...")
+        insights_start = time.monotonic()
         insight_results = evaluate_modules(curated_map, modules, opt_in_categories)
         insight_results.append(build_qc_result(qc))
         db.store_insight_results(profile_id, insight_results, kb_version)
+        logging.info("Insights generated in %.2fs.", max(time.monotonic() - insights_start, 0.001))
 
         db.update_import_status(import_id, status="ok", error_message=None)
 
