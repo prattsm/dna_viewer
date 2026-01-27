@@ -45,7 +45,7 @@ pytest
 
 ## User Guide
 - **Profiles:** Create a profile for each person. All data stays local.
-- **Import:** Choose the raw data `.txt` file (or a `.zip` containing it). If the zip has multiple `.txt` files, the app asks which one to use.
+- **Import:** Choose the raw data `.txt` file (or a `.zip` containing it). If the zip has multiple `.txt` files, the app asks which one to use. You can cancel an import mid-run; cancelled imports are marked as such and do not write genotypes/insights.
 - **Insights:** Review evidence-graded findings with limitations and genotype context.
 - **Variant Explorer:** Search by rsID to see your genotype and any matching module interpretation.
 - **Report Export:** Export HTML or PDF reports; optional encryption is available.
