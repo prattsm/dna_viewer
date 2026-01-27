@@ -13,10 +13,10 @@ HIGH_CONFIDENCE_REVSTAT = {"practice_guideline", "reviewed_by_expert_panel"}
 PATHOGENIC_LABELS = {"pathogenic", "likely_pathogenic"}
 SEED_FILENAME = "clinvar_seed.tsv"
 AUTO_IMPORT_NAMES = [
-    "clinvar.vcf.gz",
-    "clinvar.vcf",
     "variant_summary.txt.gz",
     "variant_summary.txt",
+    "clinvar.vcf.gz",
+    "clinvar.vcf",
 ]
 
 
@@ -193,7 +193,18 @@ def seed_clinvar_if_missing(db: Database) -> dict:
     return {"seeded": True, **meta}
 
 
+def packaged_clinvar_path() -> Path | None:
+    base = Path(__file__).resolve().parents[1] / "knowledge_base" / "clinvar_full"
+    candidate = base / "variant_summary.txt.gz"
+    if candidate.exists():
+        return candidate
+    return None
+
+
 def auto_import_path(data_dir: Path) -> Path | None:
+    packaged = packaged_clinvar_path()
+    if packaged:
+        return packaged
     clinvar_dir = data_dir / "clinvar"
     for name in AUTO_IMPORT_NAMES:
         candidate = clinvar_dir / name

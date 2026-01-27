@@ -31,6 +31,7 @@ sam_dna*.txt
 sam_dna*.zip
 **/AncestryDNA*.txt
 **/AncestryDNA*.zip
+src/dna_insights/knowledge_base/clinvar_full/
 
 # OS files
 .DS_Store

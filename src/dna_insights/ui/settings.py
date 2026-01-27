@@ -200,5 +200,6 @@ class SettingsPage(QWidget):
             return
         self.auto_import_label.setText(
             f"Auto import: drop a ClinVar file at {data_dir / 'clinvar'} named "
-            "'variant_summary.txt.gz' or 'clinvar.vcf.gz' to auto-import on launch."
+            "'variant_summary.txt.gz' or 'clinvar.vcf.gz' to auto-import on launch. "
+            "You can also bundle a full ClinVar file at src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz."
         )
