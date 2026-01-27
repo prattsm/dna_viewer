@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import traceback
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QInputDialog,
     QPushButton,
     QProgressDialog,
     QVBoxLayout,
@@ -26,10 +28,9 @@ from dna_insights.ui.widgets import prompt_passphrase
 class AutoCloseComboBox(QComboBox):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.view().pressed.connect(self._on_pressed)
+        self.activated.connect(self._close_popup)
 
-    def _on_pressed(self, index) -> None:
-        self.setCurrentIndex(index.row())
+    def _close_popup(self, _index: int) -> None:
         self.hidePopup()
 
 
@@ -65,8 +66,8 @@ class ImportWorker(QObject):
                 on_stage=self.stage.emit,
             )
             self.finished.emit(summary)
-        except Exception as exc:  # pragma: no cover - UI only
-            self.error.emit(str(exc))
+        except Exception:  # pragma: no cover - UI only
+            self.error.emit(traceback.format_exc())
 
 
 class ImportPage(QWidget):
@@ -74,6 +75,13 @@ class ImportPage(QWidget):
         super().__init__(parent)
         self.state = state
         self._zip_member: str | None = None
+        self._import_thread: QThread | None = None
+        self._import_worker: ImportWorker | None = None
+        self._import_progress: QProgressDialog | None = None
+        self._clinvar_thread: QThread | None = None
+        self._clinvar_worker: ClinVarAutoWorker | None = None
+        self._clinvar_progress: QProgressDialog | None = None
+        self._last_import_ok = False
 
         self.profile_combo = QComboBox()
         self.file_input = QLineEdit()
@@ -161,23 +169,43 @@ class ImportPage(QWidget):
         if not self.file_input.text():
             QMessageBox.information(self, "Import", "Choose a raw data file.")
             return
+        if self._import_thread is not None and self._import_thread.isRunning():
+            QMessageBox.information(self, "Import", "An import is already running.")
+            return
 
         if self.state.encryption.is_enabled() and not self.state.encryption.has_key():
             passphrase = prompt_passphrase(self, confirm=False)
             if not passphrase:
                 QMessageBox.information(self, "Import", "Passphrase is required for encryption.")
                 return
-            self.state.encryption.unlock(passphrase)
+            try:
+                ok = self.state.encryption.unlock(passphrase)
+                if ok is False:
+                    QMessageBox.information(self, "Import", "Incorrect passphrase.")
+                    return
+            except Exception as exc:  # pragma: no cover - UI only
+                QMessageBox.critical(self, "Import", f"Failed to unlock encryption: {exc}")
+                return
 
         profile_id = self.profile_combo.currentData()
         file_path = Path(self.file_input.text())
+        if not file_path.exists():
+            QMessageBox.information(self, "Import", "Selected file no longer exists.")
+            return
         mode = self.mode_combo.currentText()
 
-        progress = QProgressDialog("Importing data...", "Cancel", 0, 0, self)
+        progress = QProgressDialog("Importing data...", "", 0, 0, self)
         progress.setWindowTitle("Import")
         progress.setAutoClose(False)
         progress.setCancelButton(None)
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.show()
+        self._import_progress = progress
+
+        self.import_button.setEnabled(False)
+        self.browse_button.setEnabled(False)
+        self.profile_combo.setEnabled(False)
+        self.mode_combo.setEnabled(False)
 
         status = {"count": 0, "stage": "Parsing raw data..."}
 
@@ -187,47 +215,52 @@ class ImportPage(QWidget):
                 label += f" ({status['count']} markers)"
             progress.setLabelText(label)
 
+        def on_progress(count: int) -> None:
+            status["count"] = count
+            update_label()
+
+        def on_stage(stage: str) -> None:
+            status["stage"] = stage
+            update_label()
+
         update_label()
 
-        thread = QThread(self)
-        worker = ImportWorker(self.state, profile_id, file_path, mode, self._zip_member)
+        self._import_thread = QThread(self)
+        self._import_worker = ImportWorker(self.state, profile_id, file_path, mode, self._zip_member)
+        thread = self._import_thread
+        worker = self._import_worker
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(
-            lambda summary: self._finish_import(summary, progress, thread, worker), Qt.QueuedConnection
-        )
-        worker.error.connect(
-            lambda message: self._fail_import(message, progress, thread, worker), Qt.QueuedConnection
-        )
-        thread.finished.connect(worker.deleteLater)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        worker.progress.connect(lambda count: status.update({"count": count}) or update_label(), Qt.QueuedConnection)
-        worker.stage.connect(lambda stage: status.update({"stage": stage}) or update_label(), Qt.QueuedConnection)
+        thread.finished.connect(self._cleanup_import_refs)
+        thread.finished.connect(self._reenable_import_ui)
+        thread.finished.connect(self._maybe_start_clinvar_after_import)
+        worker.finished.connect(lambda summary: self._finish_import(summary, progress), Qt.ConnectionType.QueuedConnection)
+        worker.error.connect(lambda message: self._fail_import(message, progress), Qt.ConnectionType.QueuedConnection)
+        worker.progress.connect(on_progress, Qt.ConnectionType.QueuedConnection)
+        worker.stage.connect(on_stage, Qt.ConnectionType.QueuedConnection)
         thread.start()
 
-    def _finish_import(self, summary, progress, thread, worker) -> None:
-        try:
-            worker.progress.disconnect()
-            worker.stage.disconnect()
-        except TypeError:
-            pass
+    def _finish_import(self, summary, progress) -> None:
         progress.close()
-        thread.quit()
         self.summary_label.setText(
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
         )
         self.state.data_changed.emit()
-        self._maybe_auto_import_clinvar()
+        self._last_import_ok = True
 
-    def _fail_import(self, message: str, progress, thread, worker) -> None:
-        try:
-            worker.progress.disconnect()
-            worker.stage.disconnect()
-        except TypeError:
-            pass
+    def _fail_import(self, message: str, progress) -> None:
         progress.close()
-        thread.quit()
+        self._last_import_ok = False
         QMessageBox.critical(self, "Import failed", message)
+
+    def _maybe_start_clinvar_after_import(self) -> None:
+        if self._last_import_ok:
+            self._maybe_auto_import_clinvar()
 
     def _maybe_auto_import_clinvar(self) -> None:
         data_dir = self.state.db_path.parent
@@ -238,36 +271,40 @@ class ImportPage(QWidget):
         if not rsid_filter:
             return
 
-        progress = QProgressDialog("Updating ClinVar matches...", "Cancel", 0, 0, self)
+        progress = QProgressDialog("Updating ClinVar matches...", "", 0, 0, self)
         progress.setWindowTitle("ClinVar Import")
         progress.setAutoClose(False)
         progress.setCancelButton(None)
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.show()
+        self._clinvar_progress = progress
 
-        thread = QThread(self)
-        worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter)
+        self._clinvar_thread = QThread(self)
+        self._clinvar_worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter)
+        thread = self._clinvar_thread
+        worker = self._clinvar_worker
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._cleanup_clinvar_refs)
         worker.progress.connect(
-            lambda count: progress.setLabelText(f"Processed {count} variants..."), Qt.QueuedConnection
+            lambda count: progress.setLabelText(f"Processed {count} variants..."),
+            Qt.ConnectionType.QueuedConnection,
         )
         worker.finished.connect(
-            lambda summary: self._finish_clinvar(summary, progress, thread, worker), Qt.QueuedConnection
+            lambda summary: self._finish_clinvar(summary, progress), Qt.ConnectionType.QueuedConnection
         )
         worker.error.connect(
-            lambda message: self._fail_clinvar(message, progress, thread, worker), Qt.QueuedConnection
+            lambda message: self._fail_clinvar(message, progress), Qt.ConnectionType.QueuedConnection
         )
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
         thread.start()
 
-    def _finish_clinvar(self, summary: dict, progress, thread, worker) -> None:
-        try:
-            worker.progress.disconnect()
-        except TypeError:
-            pass
+    def _finish_clinvar(self, summary: dict, progress) -> None:
         progress.close()
-        thread.quit()
         if summary.get("skipped"):
             return
         self.summary_label.setText(
@@ -275,15 +312,25 @@ class ImportPage(QWidget):
         )
         self.state.data_changed.emit()
 
-    def _fail_clinvar(self, message: str, progress, thread, worker) -> None:
-        try:
-            worker.progress.disconnect()
-        except TypeError:
-            pass
+    def _fail_clinvar(self, message: str, progress) -> None:
         progress.close()
-        thread.quit()
         QMessageBox.warning(self, "ClinVar import failed", message)
 
+    def _reenable_import_ui(self) -> None:
+        self.import_button.setEnabled(True)
+        self.browse_button.setEnabled(True)
+        self.profile_combo.setEnabled(True)
+        self.mode_combo.setEnabled(True)
+
+    def _cleanup_import_refs(self) -> None:
+        self._import_thread = None
+        self._import_worker = None
+        self._import_progress = None
+
+    def _cleanup_clinvar_refs(self) -> None:
+        self._clinvar_thread = None
+        self._clinvar_worker = None
+        self._clinvar_progress = None
 
 class ClinVarAutoWorker(QObject):
     progress = Signal(int)
@@ -306,5 +353,5 @@ class ClinVarAutoWorker(QObject):
                 rsid_filter=self.rsid_filter,
             )
             self.finished.emit(summary)
-        except Exception as exc:  # pragma: no cover - UI only
-            self.error.emit(str(exc))
+        except Exception:  # pragma: no cover - UI only
+            self.error.emit(traceback.format_exc())
