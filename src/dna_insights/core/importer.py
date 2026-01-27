@@ -9,7 +9,15 @@ from dna_insights.core.db import Database
 from dna_insights.core.insight_engine import build_qc_result, evaluate_modules
 from dna_insights.core.knowledge_base import curated_rsids
 from dna_insights.core.models import ImportSummary, KnowledgeModule, QCReport
-from dna_insights.core.parser import PARSER_VERSION, close_ancestry_handle, open_ancestry_file, parse_ancestry_handle
+import time
+
+from dna_insights.core.parser import (
+    PARSER_VERSION,
+    ancestry_text_total_bytes,
+    close_ancestry_handle,
+    open_ancestry_file,
+    parse_ancestry_handle,
+)
 from dna_insights.core.security import EncryptionManager
 from dna_insights.core.utils import sha256_file, utc_now_iso
 
@@ -32,6 +40,7 @@ def import_ancestry_file(
     encryption: EncryptionManager | None = None,
     on_progress: Callable[[int], None] | None = None,
     on_stage: Callable[[str], None] | None = None,
+    on_progress_detail: Callable[[int, int, float], None] | None = None,
 ) -> ImportSummary:
     if mode not in {"curated", "full"}:
         raise ValueError("mode must be 'curated' or 'full'")
@@ -88,9 +97,32 @@ def import_ancestry_file(
                 db.insert_genotypes_full(full_rows)
                 full_rows.clear()
 
+    total_bytes = ancestry_text_total_bytes(file_path, member=zip_member)
+    bytes_state = {"last_emit": 0}
+    start_time = time.monotonic()
+
+    def on_bytes(bytes_read: int) -> None:
+        if not on_progress_detail or total_bytes <= 0:
+            return
+        now = time.monotonic()
+        elapsed = max(now - start_time, 0.001)
+        rate = bytes_read / elapsed
+        if bytes_read - bytes_state["last_emit"] < 256 * 1024 and bytes_read < total_bytes:
+            return
+        bytes_state["last_emit"] = bytes_read
+        percent = min(int((bytes_read / total_bytes) * 100), 100)
+        remaining = max(total_bytes - bytes_read, 0)
+        eta_seconds = remaining / rate if rate > 0 else 0.0
+        on_progress_detail(percent, bytes_read, eta_seconds)
+
     handle = open_ancestry_file(file_path, member=zip_member)
     try:
-        stats = parse_ancestry_handle(handle, on_record=on_record, on_progress=on_progress)
+        stats = parse_ancestry_handle(
+            handle,
+            on_record=on_record,
+            on_progress=on_progress,
+            on_bytes=on_bytes,
+        )
     finally:
         close_ancestry_handle(handle)
 

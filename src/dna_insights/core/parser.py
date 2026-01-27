@@ -84,17 +84,42 @@ def open_ancestry_file(path: Path, member: str | None = None) -> io.TextIOBase:
     return path.open("r", encoding="utf-8", errors="replace")
 
 
+def ancestry_text_total_bytes(path: Path, member: str | None = None) -> int:
+    if path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(path) as zip_file:
+            txt_members = [name for name in zip_file.namelist() if name.lower().endswith(".txt")]
+            if not txt_members:
+                return 0
+            if member is None:
+                if len(txt_members) == 1:
+                    member = txt_members[0]
+                else:
+                    return 0
+            info = zip_file.getinfo(member)
+            return int(info.file_size)
+    try:
+        return int(path.stat().st_size)
+    except FileNotFoundError:
+        return 0
+
+
 def parse_ancestry_handle(
     handle: io.TextIOBase,
     on_record: Callable[[ParsedRecord], None],
     on_progress: Callable[[int], None] | None = None,
+    on_bytes: Callable[[int], None] | None = None,
 ) -> ParseStats:
     stats = ParseStats()
     seen_rsids: set[str] = set()
     header_checked = False
     header_has_ancestry = False
 
+    bytes_read = 0
     for line_number, line in enumerate(handle, start=1):
+        if on_bytes:
+            bytes_read += len(line.encode("utf-8", errors="ignore"))
+            if bytes_read % (1024 * 256) < len(line):
+                on_bytes(bytes_read)
         if line.startswith("#"):
             if not header_checked and "ancestry" in line.lower():
                 header_has_ancestry = True
@@ -145,6 +170,8 @@ def parse_ancestry_handle(
 
     if on_progress:
         on_progress(stats.total_markers)
+    if on_bytes:
+        on_bytes(bytes_read)
     if not header_has_ancestry:
         stats.warnings.append("Header does not mention AncestryDNA; verify file source.")
     return stats

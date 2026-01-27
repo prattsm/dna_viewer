@@ -40,6 +40,7 @@ class AutoCloseComboBox(QComboBox):
 class ImportWorker(QObject):
     progress = Signal(int)
     stage = Signal(str)
+    detail = Signal(int, int, float)
     finished = Signal(object)
     error = Signal(str)
 
@@ -67,6 +68,7 @@ class ImportWorker(QObject):
                 encryption=self.state.encryption,
                 on_progress=self.progress.emit,
                 on_stage=self.stage.emit,
+                on_progress_detail=self.detail.emit,
             )
             self.finished.emit(summary)
         except Exception:  # pragma: no cover - UI only
@@ -197,7 +199,7 @@ class ImportPage(QWidget):
             return
         mode = self.mode_combo.currentText()
 
-        progress = QProgressDialog("Importing data...", "", 0, 0, self)
+        progress = QProgressDialog("Importing data...", "", 0, 100, self)
         progress.setWindowTitle("Import")
         progress.setAutoClose(False)
         progress.setCancelButton(None)
@@ -210,12 +212,22 @@ class ImportPage(QWidget):
         self.profile_combo.setEnabled(False)
         self.mode_combo.setEnabled(False)
 
-        status = {"count": 0, "stage": "Parsing raw data..."}
+        status = {"count": 0, "stage": "Parsing raw data...", "eta": 0.0, "percent": 0}
 
         def update_label() -> None:
             label = status["stage"]
+            if status["percent"]:
+                label += f" — {status['percent']}%"
             if status["count"]:
                 label += f" ({status['count']} markers)"
+            if status["eta"] > 0:
+                minutes, seconds = divmod(int(status["eta"]), 60)
+                hours, minutes = divmod(minutes, 60)
+                if hours:
+                    eta_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                else:
+                    eta_text = f"{minutes:02d}:{seconds:02d}"
+                label += f" — ETA {eta_text}"
             progress.setLabelText(label)
 
         def on_progress(count: int) -> None:
@@ -224,6 +236,12 @@ class ImportPage(QWidget):
 
         def on_stage(stage: str) -> None:
             status["stage"] = stage
+            update_label()
+
+        def on_detail(percent: int, _bytes_read: int, eta_seconds: float) -> None:
+            status["percent"] = percent
+            status["eta"] = eta_seconds
+            progress.setValue(percent)
             update_label()
 
         update_label()
@@ -246,9 +264,11 @@ class ImportPage(QWidget):
         worker.error.connect(lambda message: self._fail_import(message, progress), Qt.ConnectionType.QueuedConnection)
         worker.progress.connect(on_progress, Qt.ConnectionType.QueuedConnection)
         worker.stage.connect(on_stage, Qt.ConnectionType.QueuedConnection)
+        worker.detail.connect(on_detail, Qt.ConnectionType.QueuedConnection)
         thread.start()
 
     def _finish_import(self, summary, progress) -> None:
+        progress.setValue(100)
         progress.close()
         self.summary_label.setText(
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
@@ -257,6 +277,7 @@ class ImportPage(QWidget):
         self._last_import_ok = True
 
     def _fail_import(self, message: str, progress) -> None:
+        progress.setValue(0)
         progress.close()
         self._last_import_ok = False
         QMessageBox.critical(self, "Import failed", message)
