@@ -30,4 +30,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-dna_insights = ["knowledge_base/**/*.json"]
+dna_insights = ["knowledge_base/**/*"]

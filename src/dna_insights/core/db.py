@@ -318,6 +318,10 @@ class Database:
         row = cur.fetchone()
         return dict(row) if row else None
 
+    def clear_clinvar_variants(self) -> None:
+        self.conn.execute("DELETE FROM clinvar_variants")
+        self.conn.commit()
+
     def _has_full_genotypes(self, profile_id: str) -> bool:
         cur = self.conn.execute(
             "SELECT 1 FROM genotypes_full WHERE profile_id = ? LIMIT 1",

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dna_insights.core.clinvar import import_clinvar_snapshot
+from dna_insights.core.clinvar import import_clinvar_snapshot, seed_clinvar_if_missing, seed_metadata
 from dna_insights.core.db import Database
 
 
@@ -15,4 +15,15 @@ def test_clinvar_import(tmp_path: Path) -> None:
     assert db.get_clinvar_variant("rs123") is not None
     assert db.get_clinvar_variant("rs456") is None
     assert db.get_clinvar_variant("rs789") is None
+    db.close()
+
+
+def test_clinvar_seed(tmp_path: Path) -> None:
+    db_path = tmp_path / "seed.sqlite3"
+    db = Database(db_path)
+    summary = seed_clinvar_if_missing(db)
+    meta = seed_metadata()
+    assert summary["seeded"] is True
+    assert summary["variant_count"] == meta["variant_count"]
+    assert db.get_latest_clinvar_import() is not None
     db.close()

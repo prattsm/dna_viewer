@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
+from importlib import resources
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 from dna_insights.core.db import Database
 from dna_insights.core.utils import sha256_file
 
 HIGH_CONFIDENCE_REVSTAT = {"practice_guideline", "reviewed_by_expert_panel"}
 PATHOGENIC_LABELS = {"pathogenic", "likely_pathogenic"}
+SEED_FILENAME = "clinvar_seed.tsv"
 
 
 def _open_vcf(path: Path):
@@ -51,14 +54,65 @@ def _is_pathogenic(cln_sig: str) -> bool:
     return bool(values & PATHOGENIC_LABELS)
 
 
+def _seed_bytes() -> bytes:
+    seed_path = resources.files("dna_insights.knowledge_base") / SEED_FILENAME
+    return seed_path.read_bytes()
+
+
+def seed_metadata() -> dict:
+    data = _seed_bytes()
+    lines = [line for line in data.decode("utf-8").splitlines() if line.strip()]
+    variant_count = max(len(lines) - 1, 0)
+    return {
+        "file_hash_sha256": hashlib.sha256(data).hexdigest(),
+        "variant_count": variant_count,
+    }
+
+
+def _parse_seed_variants(text: str) -> list[tuple]:
+    rows: list[tuple] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("#") or line.lower().startswith("rsid"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 9:
+            continue
+        rsid, chrom, pos, ref, alt, clnsig, review, conditions, last_eval = parts[:9]
+        try:
+            pos_int = int(pos)
+        except ValueError:
+            continue
+        rows.append((rsid, chrom, pos_int, ref, alt, clnsig, review, conditions, last_eval))
+    return rows
+
+
+def seed_clinvar_if_missing(db: Database) -> dict:
+    if db.get_latest_clinvar_import():
+        return {"seeded": False}
+    data = _seed_bytes()
+    rows = _parse_seed_variants(data.decode("utf-8"))
+    if not rows:
+        return {"seeded": False}
+    db.upsert_clinvar_variants(rows)
+    db.commit()
+    meta = seed_metadata()
+    db.add_clinvar_import(meta["file_hash_sha256"], meta["variant_count"])
+    return {"seeded": True, **meta}
+
+
 def import_clinvar_snapshot(
     *,
     file_path: Path,
     db_path: Path,
     on_progress: Callable[[int], None] | None = None,
+    replace: bool = True,
 ) -> dict:
     file_hash = sha256_file(file_path)
     db = Database(db_path)
+    if replace:
+        db.clear_clinvar_variants()
     inserted = 0
     batch: list[tuple] = []
 

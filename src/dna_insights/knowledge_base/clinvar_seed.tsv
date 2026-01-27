@@ -1,0 +1,6 @@
+rsid	chrom	pos	ref	alt	clinical_significance	review_status	conditions	last_evaluated
+rs123	1	10000	A	G	Pathogenic	reviewed_by_expert_panel	Condition A	20200101
+rs234	2	20000	C	T	Likely_pathogenic	practice_guideline	Condition B	20200202
+rs345	3	30000	G	A	Pathogenic	reviewed_by_expert_panel	Condition C	20200303
+rs456	4	40000	T	C	Likely_pathogenic	practice_guideline	Condition D	20200404
+rs567	5	50000	A	C	Pathogenic	reviewed_by_expert_panel	Condition E	20200505
