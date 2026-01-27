@@ -40,6 +40,54 @@ class ClinVarAutoWorker(QObject):
             self.error.emit(str(exc))
 
 
+class ClinVarAutoController(QObject):
+    def __init__(self, state: AppState, data_dir: Path, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.state = state
+        self.data_dir = data_dir
+        self.thread: QThread | None = None
+        self.worker: ClinVarAutoWorker | None = None
+
+    def start(self) -> None:
+        if self.thread is not None:
+            return
+        file_path = auto_import_path(self.data_dir)
+        if not file_path:
+            return
+        rsid_filter = self.state.db.get_all_rsids()
+        if not rsid_filter:
+            logging.info("ClinVar auto-import skipped: no rsIDs available yet.")
+            return
+        self.thread = QThread(self)
+        self.worker = ClinVarAutoWorker(self.state.db_path, file_path, rsid_filter)
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self._on_done, Qt.QueuedConnection)
+        self.worker.error.connect(self._on_error, Qt.QueuedConnection)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker.error.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        self.thread.start()
+
+    def _finalize(self) -> None:
+        if self.thread:
+            self.thread.quit()
+        self.thread = None
+        self.worker = None
+
+    def _on_done(self, summary: dict) -> None:
+        if summary.get("skipped"):
+            logging.info("ClinVar auto-import skipped: %s", summary.get("reason", "unknown"))
+        else:
+            logging.info("ClinVar auto-imported %s variants.", summary.get("variant_count", 0))
+            self.state.data_changed.emit()
+        self._finalize()
+
+    def _on_error(self, message: str) -> None:
+        logging.error("ClinVar auto-import failed: %s", message)
+        self._finalize()
+
+
 def _setup_logging(log_dir: Path) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / LOG_FILENAME
@@ -101,45 +149,8 @@ def main() -> int:
     window = MainWindow(state)
     window.show()
 
-    def _maybe_auto_import_clinvar() -> None:
-        file_path = auto_import_path(data_dir)
-        if not file_path:
-            return
-        rsid_filter = state.db.get_all_rsids()
-        if not rsid_filter:
-            logging.info("ClinVar auto-import skipped: no rsIDs available yet.")
-            return
-        thread = QThread(window)
-        worker = ClinVarAutoWorker(state.db_path, file_path, rsid_filter)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(
-            lambda summary: _on_auto_import_done(summary, thread, worker), Qt.QueuedConnection
-        )
-        worker.error.connect(
-            lambda message: _on_auto_import_error(message, thread, worker), Qt.QueuedConnection
-        )
-        thread.start()
-
-    def _on_auto_import_done(summary: dict, thread: QThread, worker: ClinVarAutoWorker) -> None:
-        thread.quit()
-        thread.wait()
-        worker.deleteLater()
-        thread.deleteLater()
-        if summary.get("skipped"):
-            logging.info("ClinVar auto-import skipped: %s", summary.get("reason", "unknown"))
-        else:
-            logging.info("ClinVar auto-imported %s variants.", summary.get("variant_count", 0))
-            state.data_changed.emit()
-
-    def _on_auto_import_error(message: str, thread: QThread, worker: ClinVarAutoWorker) -> None:
-        thread.quit()
-        thread.wait()
-        worker.deleteLater()
-        thread.deleteLater()
-        logging.error("ClinVar auto-import failed: %s", message)
-
-    QTimer.singleShot(0, _maybe_auto_import_clinvar)
+    clinvar_controller = ClinVarAutoController(state, data_dir, parent=window)
+    QTimer.singleShot(0, clinvar_controller.start)
     exit_code = app.exec()
     state.close()
     save_settings(settings)
