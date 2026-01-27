@@ -25,6 +25,7 @@ from dna_insights.ui.widgets import prompt_passphrase
 
 class ImportWorker(QObject):
     progress = Signal(int)
+    stage = Signal(str)
     finished = Signal(object)
     error = Signal(str)
 
@@ -51,6 +52,7 @@ class ImportWorker(QObject):
                 zip_member=self.zip_member,
                 encryption=self.state.encryption,
                 on_progress=self.progress.emit,
+                on_stage=self.stage.emit,
             )
             self.finished.emit(summary)
         except Exception as exc:  # pragma: no cover - UI only
@@ -167,13 +169,24 @@ class ImportPage(QWidget):
         progress.setCancelButton(None)
         progress.show()
 
+        status = {"count": 0, "stage": "Parsing raw data..."}
+
+        def update_label() -> None:
+            label = status["stage"]
+            if status["count"]:
+                label += f" ({status['count']} markers)"
+            progress.setLabelText(label)
+
+        update_label()
+
         thread = QThread(self)
         worker = ImportWorker(self.state, profile_id, file_path, mode, self._zip_member)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(lambda summary: self._finish_import(summary, progress, thread, worker))
         worker.error.connect(lambda message: self._fail_import(message, progress, thread, worker))
-        worker.progress.connect(lambda count: progress.setLabelText(f"Processed {count} markers..."))
+        worker.progress.connect(lambda count: status.update({"count": count}) or update_label())
+        worker.stage.connect(lambda stage: status.update({"stage": stage}) or update_label())
         thread.start()
 
     def _finish_import(self, summary, progress, thread, worker) -> None:

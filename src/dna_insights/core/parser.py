@@ -143,6 +143,8 @@ def parse_ancestry_handle(
         if on_progress and stats.total_markers % 10000 == 0:
             on_progress(stats.total_markers)
 
+    if on_progress:
+        on_progress(stats.total_markers)
     if not header_has_ancestry:
         stats.warnings.append("Header does not mention AncestryDNA; verify file source.")
     return stats

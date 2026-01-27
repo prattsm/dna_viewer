@@ -31,10 +31,13 @@ def import_ancestry_file(
     zip_member: str | None = None,
     encryption: EncryptionManager | None = None,
     on_progress: Callable[[int], None] | None = None,
+    on_stage: Callable[[str], None] | None = None,
 ) -> ImportSummary:
     if mode not in {"curated", "full"}:
         raise ValueError("mode must be 'curated' or 'full'")
 
+    if on_stage:
+        on_stage("Parsing raw data...")
     file_hash = sha256_file(file_path)
     curated_set = curated_rsids(modules)
 
@@ -91,6 +94,8 @@ def import_ancestry_file(
     finally:
         close_ancestry_handle(handle)
 
+    if on_stage:
+        on_stage("Writing genotypes...")
     if curated_rows:
         db.insert_genotypes_curated(curated_rows)
     if full_rows:
@@ -107,6 +112,8 @@ def import_ancestry_file(
         warnings=stats.warnings,
     )
 
+    if on_stage:
+        on_stage("Generating insights...")
     insight_results = evaluate_modules(curated_map, modules, opt_in_categories)
     insight_results.append(build_qc_result(qc))
     db.store_insight_results(profile_id, insight_results, kb_version)
