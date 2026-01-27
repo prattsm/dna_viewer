@@ -27,6 +27,8 @@ dist/
 *.db
 *.log
 sam_dna/
+sam_dna*.txt
+sam_dna*.zip
 **/AncestryDNA*.txt
 **/AncestryDNA*.zip
 
