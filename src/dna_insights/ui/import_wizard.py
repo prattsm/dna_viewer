@@ -212,12 +212,18 @@ class ImportPage(QWidget):
         self.profile_combo.setEnabled(False)
         self.mode_combo.setEnabled(False)
 
-        status = {"count": 0, "stage": "Parsing raw data...", "eta": 0.0, "percent": 0}
+        status = {
+            "count": 0,
+            "stage": "Parsing raw data...",
+            "eta": 0.0,
+            "percent": 0,
+            "visual_percent": 0,
+        }
 
         def update_label() -> None:
             label = status["stage"]
-            if status["percent"]:
-                label += f" — {status['percent']}%"
+            if status["visual_percent"]:
+                label += f" — {status['visual_percent']}%"
             if status["count"]:
                 label += f" ({status['count']} markers)"
             if status["eta"] > 0:
@@ -236,12 +242,19 @@ class ImportPage(QWidget):
 
         def on_stage(stage: str) -> None:
             status["stage"] = stage
+            if stage == "Writing genotypes...":
+                status["visual_percent"] = max(status["visual_percent"], 95)
+                progress.setValue(status["visual_percent"])
+            elif stage == "Generating insights...":
+                status["visual_percent"] = max(status["visual_percent"], 98)
+                progress.setValue(status["visual_percent"])
             update_label()
 
         def on_detail(percent: int, _bytes_read: int, eta_seconds: float) -> None:
             status["percent"] = percent
             status["eta"] = eta_seconds
-            progress.setValue(percent)
+            status["visual_percent"] = max(status["visual_percent"], int(percent * 0.9))
+            progress.setValue(status["visual_percent"])
             update_label()
 
         update_label()
