@@ -1,0 +1,32 @@
+# Project-local instructions
+AGENTS.md
+PROJECT_SPEC.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+
+# Builds
+build/
+dist/
+
+# Local data
+*.sqlite3
+*.db
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

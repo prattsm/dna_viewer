@@ -1,0 +1,28 @@
+{
+  "module_id": "alcohol_flush",
+  "category": "nutrition",
+  "display_name": "Alcohol flush (ALDH2 rs671)",
+  "rsids": ["rs671"],
+  "rules": [
+    {
+      "rsid": "rs671",
+      "genotypes": ["AG", "AA"],
+      "summary": "A allele is associated with reduced ALDH2 activity and higher likelihood of alcohol flush response in some populations."
+    },
+    {
+      "rsid": "rs671",
+      "genotypes": ["GG"],
+      "summary": "GG is the typical genotype and is not associated with the classic ALDH2 flush response."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs671.",
+  "evidence_level": {
+    "grade": "B",
+    "summary": "Well-characterized variant; population prevalence varies."
+  },
+  "limitations": "Effects are population-dependent. This does not diagnose alcohol-related risks or conditions.",
+  "references": [
+    "Chen et al. 1999 - ALDH2 rs671 and alcohol metabolism",
+    "AncestryDNA raw data format documentation"
+  ]
+}

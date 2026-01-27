@@ -1,0 +1,28 @@
+{
+  "module_id": "caffeine_metabolism",
+  "category": "nutrition",
+  "display_name": "Caffeine metabolism (CYP1A2 rs762551)",
+  "rsids": ["rs762551"],
+  "rules": [
+    {
+      "rsid": "rs762551",
+      "genotypes": ["AA"],
+      "summary": "AA is often associated with faster caffeine metabolism, though findings vary and effects are modest."
+    },
+    {
+      "rsid": "rs762551",
+      "genotypes": ["AC", "CC"],
+      "summary": "AC/CC are often associated with slower caffeine metabolism, though findings vary and effects are modest."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs762551.",
+  "evidence_level": {
+    "grade": "C",
+    "summary": "Evidence is mixed; associations are modest and context-dependent."
+  },
+  "limitations": "This is a proxy and does not predict tolerance or health outcomes. Lifestyle and other genes matter.",
+  "references": [
+    "Cornelis et al. 2006 - CYP1A2 and caffeine metabolism",
+    "AncestryDNA raw data format documentation"
+  ]
+}

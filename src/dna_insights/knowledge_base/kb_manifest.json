@@ -1,0 +1,11 @@
+{
+  "kb_version": "0.1.0",
+  "build": "GRCh37",
+  "strand": "+",
+  "module_files": [
+    "lactose_persistence.json",
+    "caffeine_metabolism.json",
+    "alcohol_flush.json",
+    "fto_trait.json"
+  ]
+}

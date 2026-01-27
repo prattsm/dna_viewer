@@ -1,0 +1,9 @@
+# AncestryDNA raw data
+# This is a dummy file for testing
+rs4988235 2 136608646 C T
+rs762551 15 75000000 A A
+rs671 12 112241766 G A
+rs9939609 16 53820527 T T
+rs4988235 2 136608646 C T
+badline
+rsX 23 1000 A -

@@ -1,0 +1,33 @@
+{
+  "module_id": "fto_trait",
+  "category": "wellness",
+  "display_name": "Body weight association (FTO rs9939609)",
+  "rsids": ["rs9939609"],
+  "rules": [
+    {
+      "rsid": "rs9939609",
+      "genotypes": ["AA"],
+      "summary": "AA is associated with a modest increase in average BMI in some studies; individual effects are small."
+    },
+    {
+      "rsid": "rs9939609",
+      "genotypes": ["AT"],
+      "summary": "AT is associated with a modest increase in average BMI in some studies; individual effects are small."
+    },
+    {
+      "rsid": "rs9939609",
+      "genotypes": ["TT"],
+      "summary": "TT is not associated with the modest BMI increase reported for the A allele."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs9939609.",
+  "evidence_level": {
+    "grade": "C",
+    "summary": "Common variant with small effect sizes; results vary by ancestry and environment."
+  },
+  "limitations": "This is a low-penetrance association and does not predict outcomes for any individual.",
+  "references": [
+    "Frayling et al. 2007 - FTO and BMI association",
+    "AncestryDNA raw data format documentation"
+  ]
+}

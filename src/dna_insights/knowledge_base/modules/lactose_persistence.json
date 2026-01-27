@@ -1,0 +1,28 @@
+{
+  "module_id": "lactose_persistence",
+  "category": "nutrition",
+  "display_name": "Lactose persistence (LCT rs4988235)",
+  "rsids": ["rs4988235"],
+  "rules": [
+    {
+      "rsid": "rs4988235",
+      "genotypes": ["CT", "TT"],
+      "summary": "Genotype includes the T allele, which is associated with lactase persistence in many populations. Effects vary by ancestry and individual tolerance."
+    },
+    {
+      "rsid": "rs4988235",
+      "genotypes": ["CC"],
+      "summary": "Genotype lacks the T allele and is associated with higher likelihood of lactose non-persistence in many populations. Symptoms still depend on diet and context."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs4988235.",
+  "evidence_level": {
+    "grade": "B",
+    "summary": "Multiple studies support an association, but effects are population-dependent."
+  },
+  "limitations": "This is a proxy marker and does not diagnose lactose intolerance. Population effects differ and symptoms are influenced by diet.",
+  "references": [
+    "Enattah et al. 2002 (Nature Genetics) - lactase persistence association",
+    "AncestryDNA raw data format documentation"
+  ]
+}

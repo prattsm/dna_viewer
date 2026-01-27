@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Iterable
+
+from dna_insights.core.utils import safe_uuid, utc_now_iso
+
+
+SCHEMA_VERSION = 1
+
+
+class Database:
+    def __init__(self, db_path: Path) -> None:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = db_path
+        self.conn = sqlite3.connect(db_path)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self._migrate()
+
+    def close(self) -> None:
+        self.conn.close()
+
+    def _migrate(self) -> None:
+        cur = self.conn.execute("PRAGMA user_version")
+        version = cur.fetchone()[0]
+        if version >= SCHEMA_VERSION:
+            return
+
+        self.conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS profiles (
+                id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                encryption_enabled INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS imports (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                source TEXT NOT NULL,
+                file_hash_sha256 TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                parser_version TEXT NOT NULL,
+                build TEXT NOT NULL,
+                strand TEXT NOT NULL,
+                FOREIGN KEY(profile_id) REFERENCES profiles(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS genotypes_curated (
+                profile_id TEXT NOT NULL,
+                rsid TEXT NOT NULL,
+                chrom TEXT NOT NULL,
+                pos INTEGER NOT NULL,
+                genotype TEXT,
+                PRIMARY KEY(profile_id, rsid)
+            );
+
+            CREATE TABLE IF NOT EXISTS genotypes_full (
+                profile_id TEXT NOT NULL,
+                rsid TEXT NOT NULL,
+                chrom TEXT NOT NULL,
+                pos INTEGER NOT NULL,
+                genotype TEXT,
+                PRIMARY KEY(profile_id, rsid)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_genotypes_full_profile_rsid
+                ON genotypes_full(profile_id, rsid);
+
+            CREATE INDEX IF NOT EXISTS idx_genotypes_full_profile_chrom_pos
+                ON genotypes_full(profile_id, chrom, pos);
+
+            CREATE TABLE IF NOT EXISTS insight_results (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                kb_version TEXT NOT NULL,
+                FOREIGN KEY(profile_id) REFERENCES profiles(id)
+            );
+            """
+        )
+        self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        self.conn.commit()
+
+    def create_profile(self, display_name: str, notes: str | None = None) -> str:
+        profile_id = safe_uuid()
+        self.conn.execute(
+            "INSERT INTO profiles (id, display_name, notes, created_at, encryption_enabled)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (profile_id, display_name, notes, utc_now_iso(), 0),
+        )
+        self.conn.commit()
+        return profile_id
+
+    def list_profiles(self) -> list[dict]:
+        cur = self.conn.execute(
+            """
+            SELECT p.id, p.display_name, p.notes, p.created_at, p.encryption_enabled,
+                   MAX(i.imported_at) AS last_imported_at
+            FROM profiles p
+            LEFT JOIN imports i ON i.profile_id = p.id
+            GROUP BY p.id
+            ORDER BY p.created_at DESC
+            """
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def get_profile(self, profile_id: str) -> dict | None:
+        cur = self.conn.execute(
+            "SELECT id, display_name, notes, created_at, encryption_enabled FROM profiles WHERE id = ?",
+            (profile_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def rename_profile(self, profile_id: str, new_name: str) -> None:
+        self.conn.execute(
+            "UPDATE profiles SET display_name = ? WHERE id = ?",
+            (new_name, profile_id),
+        )
+        self.conn.commit()
+
+    def delete_profile(self, profile_id: str) -> None:
+        self.conn.execute("DELETE FROM genotypes_curated WHERE profile_id = ?", (profile_id,))
+        self.conn.execute("DELETE FROM genotypes_full WHERE profile_id = ?", (profile_id,))
+        self.conn.execute("DELETE FROM insight_results WHERE profile_id = ?", (profile_id,))
+        self.conn.execute("DELETE FROM imports WHERE profile_id = ?", (profile_id,))
+        self.conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+        self.conn.commit()
+
+    def add_import(
+        self,
+        profile_id: str,
+        source: str,
+        file_hash_sha256: str,
+        parser_version: str,
+        build: str,
+        strand: str,
+        imported_at: str | None = None,
+    ) -> tuple[str, str]:
+        import_id = safe_uuid()
+        timestamp = imported_at or utc_now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO imports (id, profile_id, source, file_hash_sha256, imported_at, parser_version, build, strand)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (import_id, profile_id, source, file_hash_sha256, timestamp, parser_version, build, strand),
+        )
+        self.conn.commit()
+        return import_id, timestamp
+
+    def insert_genotypes_curated(self, rows: Iterable[tuple]) -> None:
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO genotypes_curated (profile_id, rsid, chrom, pos, genotype)"
+            " VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+
+    def insert_genotypes_full(self, rows: Iterable[tuple]) -> None:
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO genotypes_full (profile_id, rsid, chrom, pos, genotype)"
+            " VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+
+    def commit(self) -> None:
+        self.conn.commit()
+
+    def get_curated_genotypes(self, profile_id: str) -> dict[str, dict]:
+        cur = self.conn.execute(
+            "SELECT rsid, chrom, pos, genotype FROM genotypes_curated WHERE profile_id = ?",
+            (profile_id,),
+        )
+        return {row["rsid"]: dict(row) for row in cur.fetchall()}
+
+    def get_variant(self, profile_id: str, rsid: str) -> dict | None:
+        cur = self.conn.execute(
+            "SELECT rsid, chrom, pos, genotype FROM genotypes_curated WHERE profile_id = ? AND rsid = ?",
+            (profile_id, rsid),
+        )
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        cur = self.conn.execute(
+            "SELECT rsid, chrom, pos, genotype FROM genotypes_full WHERE profile_id = ? AND rsid = ?",
+            (profile_id, rsid),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def store_insight_results(self, profile_id: str, results: list[dict], kb_version: str) -> str:
+        generated_at = utc_now_iso()
+        rows = [
+            (
+                safe_uuid(),
+                profile_id,
+                result["module_id"],
+                json.dumps(result),
+                generated_at,
+                kb_version,
+            )
+            for result in results
+        ]
+        self.conn.executemany(
+            """
+            INSERT INTO insight_results (id, profile_id, module_id, result_json, generated_at, kb_version)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        self.conn.commit()
+        return generated_at
+
+    def get_latest_insights(self, profile_id: str) -> list[dict]:
+        cur = self.conn.execute(
+            "SELECT MAX(generated_at) AS latest FROM insight_results WHERE profile_id = ?",
+            (profile_id,),
+        )
+        row = cur.fetchone()
+        if not row or not row["latest"]:
+            return []
+        latest = row["latest"]
+        cur = self.conn.execute(
+            "SELECT result_json FROM insight_results WHERE profile_id = ? AND generated_at = ?",
+            (profile_id, latest),
+        )
+        return [json.loads(r["result_json"]) for r in cur.fetchall()]
+
+    def get_latest_import(self, profile_id: str) -> dict | None:
+        cur = self.conn.execute(
+            """
+            SELECT id, profile_id, source, file_hash_sha256, imported_at, parser_version, build, strand
+            FROM imports
+            WHERE profile_id = ?
+            ORDER BY imported_at DESC
+            LIMIT 1
+            """,
+            (profile_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
