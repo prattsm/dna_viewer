@@ -70,7 +70,7 @@ Each module includes evidence grading, limitations, and references that appear i
 - The app ships with a small bundled ClinVar snapshot so clinical references work out of the box.
 - For the full ClinVar dataset, place the **variant summary** file at:
   - `<data_dir>/clinvar/variant_summary.txt.gz` (or `.txt`)
-  - The app will auto-import it on launch (no manual step required).
+  - The app will auto-import it on launch (no manual step required), or right after your DNA import completes.
 - If you are packaging a distribution and want the full file to ship with the app, place it at:
   - `src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz` (or `.txt`)
   - This path is git-ignored to keep large files out of the repo.
