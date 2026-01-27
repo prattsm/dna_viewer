@@ -27,3 +27,10 @@ def test_clinvar_seed(tmp_path: Path) -> None:
     assert summary["variant_count"] == meta["variant_count"]
     assert db.get_latest_clinvar_import() is not None
     db.close()
+
+
+def test_clinvar_import_empty_filter(tmp_path: Path) -> None:
+    db_path = tmp_path / "empty.sqlite3"
+    sample_path = Path("tests/fixtures/clinvar_sample.vcf")
+    summary = import_clinvar_snapshot(file_path=sample_path, db_path=db_path, rsid_filter=set())
+    assert summary["skipped"] is True

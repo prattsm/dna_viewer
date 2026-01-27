@@ -322,6 +322,13 @@ class Database:
         self.conn.execute("DELETE FROM clinvar_variants")
         self.conn.commit()
 
+    def get_all_rsids(self) -> set[str]:
+        cur = self.conn.execute("SELECT rsid FROM genotypes_full")
+        rsids = {row["rsid"] for row in cur.fetchall()}
+        cur = self.conn.execute("SELECT rsid FROM genotypes_curated")
+        rsids.update(row["rsid"] for row in cur.fetchall())
+        return rsids
+
     def _has_full_genotypes(self, profile_id: str) -> bool:
         cur = self.conn.execute(
             "SELECT 1 FROM genotypes_full WHERE profile_id = ? LIMIT 1",

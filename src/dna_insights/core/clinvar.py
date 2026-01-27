@@ -12,6 +12,7 @@ from dna_insights.core.utils import sha256_file
 HIGH_CONFIDENCE_REVSTAT = {"practice_guideline", "reviewed_by_expert_panel"}
 PATHOGENIC_LABELS = {"pathogenic", "likely_pathogenic"}
 SEED_FILENAME = "clinvar_seed.tsv"
+AUTO_IMPORT_NAMES = ["clinvar.vcf.gz", "clinvar.vcf"]
 
 
 def _open_vcf(path: Path):
@@ -102,15 +103,34 @@ def seed_clinvar_if_missing(db: Database) -> dict:
     return {"seeded": True, **meta}
 
 
+def auto_import_path(data_dir: Path) -> Path | None:
+    clinvar_dir = data_dir / "clinvar"
+    for name in AUTO_IMPORT_NAMES:
+        candidate = clinvar_dir / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def import_clinvar_snapshot(
     *,
     file_path: Path,
     db_path: Path,
     on_progress: Callable[[int], None] | None = None,
     replace: bool = True,
+    rsid_filter: set[str] | None = None,
 ) -> dict:
-    file_hash = sha256_file(file_path)
     db = Database(db_path)
+    if rsid_filter is not None and not rsid_filter:
+        db.close()
+        return {"skipped": True, "reason": "no_rsids"}
+
+    file_hash = sha256_file(file_path)
+    latest = db.get_latest_clinvar_import()
+    if latest and latest.get("file_hash_sha256") == file_hash:
+        db.close()
+        return {"skipped": True, "reason": "already_imported", **latest}
+
     if replace:
         db.clear_clinvar_variants()
     inserted = 0
@@ -131,6 +151,8 @@ def import_clinvar_snapshot(
             clnsig = info_map.get("CLNSIG", "")
             review = info_map.get("CLNREVSTAT", "")
             if not (_is_high_confidence(review) and _is_pathogenic(clnsig)):
+                continue
+            if rsid_filter is not None and rsid not in rsid_filter:
                 continue
 
             conditions = info_map.get("CLNDN") or info_map.get("CLNDISDB") or ""
