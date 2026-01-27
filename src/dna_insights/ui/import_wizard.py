@@ -28,10 +28,13 @@ from dna_insights.ui.widgets import prompt_passphrase
 class AutoCloseComboBox(QComboBox):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        # Close reliably on mouse selection or keyboard activation.
         self.activated.connect(self._close_popup)
+        self.view().clicked.connect(lambda _index: self.hidePopup())
 
     def _close_popup(self, _index: int) -> None:
-        self.hidePopup()
+        if self.view().isVisible():
+            self.hidePopup()
 
 
 class ImportWorker(QObject):
