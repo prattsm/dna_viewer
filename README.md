@@ -69,13 +69,14 @@ Each module includes evidence grading, limitations, and references that appear i
 ## ClinVar snapshot import (optional)
 - The app ships with a small bundled ClinVar snapshot so clinical references work out of the box.
 - For the full ClinVar dataset, place the **variant summary** file at:
-  - `<data_dir>/clinvar/variant_summary.txt.gz`
+  - `<data_dir>/clinvar/variant_summary.txt.gz` (or `.txt`)
   - The app will auto-import it on launch (no manual step required).
 - If you are packaging a distribution and want the full file to ship with the app, place it at:
-  - `src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz`
+  - `src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz` (or `.txt`)
   - This path is git-ignored to keep large files out of the repo.
 - You can also use the VCF snapshot (`clinvar.vcf.gz`) or import via **Settings** to replace the bundled data.
-- Only high-confidence review statuses (expert panel or practice guideline) and pathogenic/likely pathogenic entries are stored.
+- All clinical significance categories are stored, but the UI surfaces review status, confidence level, and conflicts clearly.
+- The app still stores only variants that match rsIDs found in the user’s imported DNA file.
 - Any clinical references are informational only and require clinical confirmation.
 
 ## License
