@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from dna_insights.core.db import Database
+from dna_insights.core.exceptions import ImportCancelled
 from dna_insights.core.insight_engine import build_qc_result, evaluate_modules
 from dna_insights.core.knowledge_base import curated_rsids
 from dna_insights.core.models import ImportSummary, KnowledgeModule, QCReport
@@ -33,6 +34,7 @@ def _hash_and_store_raw(
     raw_path: Path,
     encryption: EncryptionManager | None,
     on_progress_detail: Callable[[int, int, float], None] | None,
+    cancel_check: Callable[[], bool] | None,
 ) -> str:
     try:
         total_bytes = int(file_path.stat().st_size)
@@ -58,26 +60,38 @@ def _hash_and_store_raw(
         eta_seconds = remaining / rate if rate > 0 else 0.0
         on_progress_detail(percent, bytes_read, eta_seconds)
 
-    if encryption and encryption.is_enabled():
-        if not encryption.has_key():
-            raise RuntimeError("Encryption is enabled but passphrase has not been provided.")
-        buffer = bytearray()
-        with file_path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                hasher.update(chunk)
-                buffer.extend(chunk)
-                bytes_read += len(chunk)
-                maybe_emit()
-        encrypted = encryption.encrypt_bytes(bytes(buffer))
-        _write_bytes(raw_path, encrypted)
-    else:
-        raw_path.parent.mkdir(parents=True, exist_ok=True)
-        with file_path.open("rb") as src, raw_path.open("wb") as dst:
-            for chunk in iter(lambda: src.read(1024 * 1024), b""):
-                hasher.update(chunk)
-                dst.write(chunk)
-                bytes_read += len(chunk)
-                maybe_emit()
+    try:
+        if encryption and encryption.is_enabled():
+            if not encryption.has_key():
+                raise RuntimeError("Encryption is enabled but passphrase has not been provided.")
+            buffer = bytearray()
+            with file_path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    if cancel_check and cancel_check():
+                        raise ImportCancelled("Import cancelled.")
+                    hasher.update(chunk)
+                    buffer.extend(chunk)
+                    bytes_read += len(chunk)
+                    maybe_emit()
+            encrypted = encryption.encrypt_bytes(bytes(buffer))
+            _write_bytes(raw_path, encrypted)
+        else:
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            with file_path.open("rb") as src, raw_path.open("wb") as dst:
+                for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                    if cancel_check and cancel_check():
+                        raise ImportCancelled("Import cancelled.")
+                    hasher.update(chunk)
+                    dst.write(chunk)
+                    bytes_read += len(chunk)
+                    maybe_emit()
+    except ImportCancelled:
+        try:
+            if raw_path.exists():
+                raw_path.unlink()
+        except Exception:
+            pass
+        raise
 
     if on_progress_detail and total_bytes > 0:
         on_progress_detail(100, bytes_read, 0.0)
@@ -105,6 +119,7 @@ def import_ancestry_file(
     on_progress: Callable[[int], None] | None = None,
     on_stage: Callable[[str], None] | None = None,
     on_progress_detail: Callable[[int, int, float], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> ImportSummary:
     if mode not in {"curated", "full"}:
         raise ValueError("mode must be 'curated' or 'full'")
@@ -127,6 +142,7 @@ def import_ancestry_file(
             raw_path=raw_path,
             encryption=encryption,
             on_progress_detail=on_progress_detail,
+            cancel_check=cancel_check,
         )
         prep_duration = max(time.monotonic() - prep_start, 0.001)
         try:
@@ -202,6 +218,8 @@ def import_ancestry_file(
         handle = open_ancestry_file(file_path, member=zip_member)
         try:
             logging.info("Import starting: mode=%s zip_member=%s", mode, zip_member or "")
+            if cancel_check and cancel_check():
+                raise ImportCancelled("Import cancelled.")
             db.begin()
             parse_start = time.monotonic()
             stats = parse_ancestry_handle(
@@ -209,6 +227,7 @@ def import_ancestry_file(
                 on_record=on_record,
                 on_progress=on_progress,
                 on_bytes=on_bytes,
+                cancel_check=cancel_check,
             )
             parse_duration = max(time.monotonic() - parse_start, 0.001)
             logging.info(
@@ -218,6 +237,8 @@ def import_ancestry_file(
                 stats.total_markers / parse_duration,
             )
 
+            if cancel_check and cancel_check():
+                raise ImportCancelled("Import cancelled.")
             if on_stage:
                 on_stage("Writing genotypes...")
             if curated_rows:
@@ -244,6 +265,8 @@ def import_ancestry_file(
             warnings=stats.warnings,
         )
 
+        if cancel_check and cancel_check():
+            raise ImportCancelled("Import cancelled.")
         if on_stage:
             on_stage("Generating insights...")
         insights_start = time.monotonic()
@@ -271,6 +294,13 @@ def import_ancestry_file(
         )
 
         return summary
+    except ImportCancelled:
+        if import_id is not None:
+            try:
+                db.update_import_status(import_id, status="cancelled", error_message="Cancelled by user.")
+            except Exception:
+                pass
+        raise
     except Exception as exc:
         if import_id is not None:
             try:

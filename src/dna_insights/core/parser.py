@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 import zipfile
 
+from dna_insights.core.exceptions import ImportCancelled
 from dna_insights.core.utils import canonical_genotype, normalize_chrom
 
 PARSER_VERSION = "1.0"
@@ -108,6 +109,7 @@ def parse_ancestry_handle(
     on_record: Callable[[ParsedRecord], None],
     on_progress: Callable[[int], None] | None = None,
     on_bytes: Callable[[int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> ParseStats:
     stats = ParseStats()
     seen_rsids: set[str] = set()
@@ -117,6 +119,8 @@ def parse_ancestry_handle(
 
     bytes_read = 0
     for line_number, line in enumerate(handle, start=1):
+        if cancel_check and line_number % 1000 == 0 and cancel_check():
+            raise ImportCancelled("Import cancelled.")
         if on_bytes:
             # Approximate bytes for progress/ETA; zip members may not match compressed sizes.
             bytes_read += len(line.encode("utf-8", errors="ignore"))
