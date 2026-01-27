@@ -34,3 +34,14 @@ def test_clinvar_import_empty_filter(tmp_path: Path) -> None:
     sample_path = Path("tests/fixtures/clinvar_sample.vcf")
     summary = import_clinvar_snapshot(file_path=sample_path, db_path=db_path, rsid_filter=set())
     assert summary["skipped"] is True
+
+
+def test_variant_summary_import(tmp_path: Path) -> None:
+    db_path = tmp_path / "variant_summary.sqlite3"
+    sample_path = Path("tests/fixtures/variant_summary_sample.txt")
+    summary = import_clinvar_snapshot(
+        file_path=sample_path,
+        db_path=db_path,
+        rsid_filter={"rs123", "rs456", "rs789"},
+    )
+    assert summary["variant_count"] == 1

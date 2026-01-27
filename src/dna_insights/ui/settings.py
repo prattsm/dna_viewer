@@ -122,9 +122,9 @@ class SettingsPage(QWidget):
     def _import_clinvar(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select ClinVar VCF snapshot",
+            "Select ClinVar snapshot",
             "",
-            "ClinVar (*.vcf *.vcf.gz *.gz)",
+            "ClinVar (*.vcf *.vcf.gz *.txt *.txt.gz *.gz)",
         )
         if not file_path:
             return
@@ -199,6 +199,6 @@ class SettingsPage(QWidget):
             self.auto_import_label.setText(f"Auto import source found: {auto_path}")
             return
         self.auto_import_label.setText(
-            f"Auto import: drop a ClinVar VCF at {data_dir / 'clinvar'} "
-            "named 'clinvar.vcf.gz' (or 'clinvar.vcf') to auto-import on launch."
+            f"Auto import: drop a ClinVar file at {data_dir / 'clinvar'} named "
+            "'variant_summary.txt.gz' or 'clinvar.vcf.gz' to auto-import on launch."
         )

@@ -1,0 +1,6 @@
+#VariantSummary
+AlleleID	Type	Name	GeneID	GeneSymbol	ClinicalSignificance	ReviewStatus	NumberSubmitters	LastEvaluated	RS#	Assembly	Chromosome	Start	ReferenceAllele	AlternateAllele	PhenotypeList
+1	Variant	Test1	-	-	Pathogenic	reviewed_by_expert_panel	1	20200101	123	GRCh37	1	10000	A	G	Condition A
+2	Variant	Test2	-	-	Likely pathogenic	criteria provided, multiple submitters, no conflicts	1	20200101	456	GRCh37	1	10001	C	T	Condition B
+3	Variant	Test3	-	-	Benign	reviewed_by_expert_panel	1	20200101	789	GRCh37	1	10002	G	A	Condition C
+4	Variant	Test4	-	-	Pathogenic	reviewed_by_expert_panel	1	20200101	999	GRCh38	2	20000	A	C	Condition D

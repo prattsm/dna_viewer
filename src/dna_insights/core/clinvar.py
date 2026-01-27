@@ -12,13 +12,16 @@ from dna_insights.core.utils import sha256_file
 HIGH_CONFIDENCE_REVSTAT = {"practice_guideline", "reviewed_by_expert_panel"}
 PATHOGENIC_LABELS = {"pathogenic", "likely_pathogenic"}
 SEED_FILENAME = "clinvar_seed.tsv"
-AUTO_IMPORT_NAMES = ["clinvar.vcf.gz", "clinvar.vcf"]
+AUTO_IMPORT_NAMES = [
+    "clinvar.vcf.gz",
+    "clinvar.vcf",
+    "variant_summary.txt.gz",
+    "variant_summary.txt",
+]
 
 
 def _open_vcf(path: Path):
-    if path.suffix.lower() == ".gz":
-        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
-    return path.open("r", encoding="utf-8", errors="replace")
+    return _open_text(path)
 
 
 def _parse_info(info: str) -> dict[str, str]:
@@ -37,14 +40,14 @@ def _parse_info(info: str) -> dict[str, str]:
 def _split_values(value: str) -> list[str]:
     if not value:
         return []
-    for sep in ("|", ","):
+    for sep in ("|", ",", ";"):
         if sep in value:
             return [part.strip() for part in value.split(sep) if part.strip()]
     return [value.strip()]
 
 
 def _is_high_confidence(review_status: str) -> bool:
-    review_lower = review_status.lower()
+    review_lower = review_status.lower().replace(" ", "_")
     return any(token in review_lower for token in HIGH_CONFIDENCE_REVSTAT)
 
 
@@ -53,6 +56,93 @@ def _is_pathogenic(cln_sig: str) -> bool:
     if "conflicting_interpretations_of_pathogenicity" in values:
         return False
     return bool(values & PATHOGENIC_LABELS)
+
+
+def _open_text(path: Path):
+    if path.suffix.lower() == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    return path.open("r", encoding="utf-8", errors="replace")
+
+
+def _is_variant_summary(path: Path) -> bool:
+    name = path.name.lower()
+    if "variant_summary" in name:
+        return True
+    if name.endswith(".txt") or name.endswith(".txt.gz"):
+        return True
+    return False
+
+
+def _column_index(header: list[str], candidates: list[str]) -> int | None:
+    for name in candidates:
+        if name in header:
+            return header.index(name)
+    return None
+
+
+def _iter_variant_summary(*, file_path: Path, rsid_filter: set[str] | None):
+    handle = _open_text(file_path)
+    try:
+        header: list[str] | None = None
+        for line in handle:
+            if line.startswith("#") or not line.strip():
+                continue
+            header = line.rstrip("\n").split("\t")
+            break
+        if not header:
+            return
+
+        rs_idx = _column_index(header, ["RS#"])
+        clnsig_idx = _column_index(header, ["ClinicalSignificance"])
+        review_idx = _column_index(header, ["ReviewStatus"])
+        assembly_idx = _column_index(header, ["Assembly"])
+        chrom_idx = _column_index(header, ["Chromosome"])
+        pos_idx = _column_index(header, ["PositionVCF", "Start"])
+        ref_idx = _column_index(header, ["ReferenceAlleleVCF", "ReferenceAllele"])
+        alt_idx = _column_index(header, ["AlternateAlleleVCF", "AlternateAllele"])
+        phenotype_idx = _column_index(header, ["PhenotypeList"])
+        last_eval_idx = _column_index(header, ["LastEvaluated"])
+
+        if rs_idx is None or clnsig_idx is None or review_idx is None:
+            raise ValueError("variant_summary is missing required columns.")
+
+        for line in handle:
+            if not line.strip():
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if rs_idx >= len(parts):
+                continue
+            rs_value = parts[rs_idx].strip()
+            if not rs_value or rs_value == "-1":
+                continue
+            rsid = rs_value if rs_value.startswith("rs") else f"rs{rs_value}"
+            if rsid_filter is not None and rsid not in rsid_filter:
+                continue
+
+            assembly = parts[assembly_idx].strip() if assembly_idx is not None and assembly_idx < len(parts) else ""
+            if assembly and not assembly.upper().startswith("GRCH37"):
+                continue
+
+            clnsig = parts[clnsig_idx].strip() if clnsig_idx < len(parts) else ""
+            review = parts[review_idx].strip() if review_idx < len(parts) else ""
+            if not (_is_high_confidence(review) and _is_pathogenic(clnsig)):
+                continue
+
+            chrom = parts[chrom_idx].strip() if chrom_idx is not None and chrom_idx < len(parts) else ""
+            pos_raw = parts[pos_idx].strip() if pos_idx is not None and pos_idx < len(parts) else ""
+            try:
+                pos = int(pos_raw)
+            except ValueError:
+                continue
+
+            ref = parts[ref_idx].strip() if ref_idx is not None and ref_idx < len(parts) else ""
+            alt = parts[alt_idx].strip() if alt_idx is not None and alt_idx < len(parts) else ""
+            conditions = parts[phenotype_idx].strip() if phenotype_idx is not None and phenotype_idx < len(parts) else ""
+            last_eval = parts[last_eval_idx].strip() if last_eval_idx is not None and last_eval_idx < len(parts) else ""
+
+            yield (rsid, chrom, pos, ref, alt, clnsig, review, conditions, last_eval)
+    finally:
+        handle.close()
 
 
 def _seed_bytes() -> bytes:
@@ -136,41 +226,9 @@ def import_clinvar_snapshot(
     inserted = 0
     batch: list[tuple] = []
 
-    handle = _open_vcf(file_path)
-    try:
-        for line_number, line in enumerate(handle, start=1):
-            if line.startswith("#"):
-                continue
-            parts = line.strip().split("\t")
-            if len(parts) < 8:
-                continue
-            chrom, pos, rsid, ref, alt, _qual, _filter, info = parts[:8]
-            if not rsid.startswith("rs"):
-                continue
-            info_map = _parse_info(info)
-            clnsig = info_map.get("CLNSIG", "")
-            review = info_map.get("CLNREVSTAT", "")
-            if not (_is_high_confidence(review) and _is_pathogenic(clnsig)):
-                continue
-            if rsid_filter is not None and rsid not in rsid_filter:
-                continue
-
-            conditions = info_map.get("CLNDN") or info_map.get("CLNDISDB") or ""
-            last_eval = info_map.get("CLNDATE", "")
-
-            batch.append(
-                (
-                    rsid,
-                    chrom,
-                    int(pos),
-                    ref,
-                    alt,
-                    clnsig,
-                    review,
-                    conditions,
-                    last_eval,
-                )
-            )
+    if _is_variant_summary(file_path):
+        for row in _iter_variant_summary(file_path=file_path, rsid_filter=rsid_filter):
+            batch.append(row)
             inserted += 1
 
             if len(batch) >= 1000:
@@ -180,8 +238,53 @@ def import_clinvar_snapshot(
 
             if on_progress and inserted % 5000 == 0:
                 on_progress(inserted)
-    finally:
-        handle.close()
+    else:
+        handle = _open_vcf(file_path)
+        try:
+            for line in handle:
+                if line.startswith("#"):
+                    continue
+                parts = line.strip().split("\t")
+                if len(parts) < 8:
+                    continue
+                chrom, pos, rsid, ref, alt, _qual, _filter, info = parts[:8]
+                if not rsid.startswith("rs"):
+                    continue
+                info_map = _parse_info(info)
+                clnsig = info_map.get("CLNSIG", "")
+                review = info_map.get("CLNREVSTAT", "")
+                if not (_is_high_confidence(review) and _is_pathogenic(clnsig)):
+                    continue
+                if rsid_filter is not None and rsid not in rsid_filter:
+                    continue
+
+                conditions = info_map.get("CLNDN") or info_map.get("CLNDISDB") or ""
+                last_eval = info_map.get("CLNDATE", "")
+
+                batch.append(
+                    (
+                        rsid,
+                        chrom,
+                        int(pos),
+                        ref,
+                        alt,
+                        clnsig,
+                        review,
+                        conditions,
+                        last_eval,
+                    )
+                )
+                inserted += 1
+
+                if len(batch) >= 1000:
+                    db.upsert_clinvar_variants(batch)
+                    db.commit()
+                    batch.clear()
+
+                if on_progress and inserted % 5000 == 0:
+                    on_progress(inserted)
+        finally:
+            handle.close()
 
     if batch:
         db.upsert_clinvar_variants(batch)
