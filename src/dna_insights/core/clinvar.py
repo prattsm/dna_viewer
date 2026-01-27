@@ -40,7 +40,7 @@ def _parse_info(info: str) -> dict[str, str]:
 def _split_values(value: str) -> list[str]:
     if not value:
         return []
-    for sep in ("|", ",", ";"):
+    for sep in ("|", ",", ";", "/"):
         if sep in value:
             return [part.strip() for part in value.split(sep) if part.strip()]
     return [value.strip()]
@@ -96,9 +96,10 @@ def _is_variant_summary(path: Path) -> bool:
 
 
 def _column_index(header: list[str], candidates: list[str]) -> int | None:
+    header_map = {name: idx for idx, name in enumerate(header)}
     for name in candidates:
-        if name in header:
-            return header.index(name)
+        if name in header_map:
+            return header_map[name]
     return None
 
 
@@ -107,14 +108,19 @@ def _iter_variant_summary(*, file_path: Path, rsid_filter: set[str] | None):
     try:
         header: list[str] | None = None
         for line in handle:
-            if line.startswith("#") or not line.strip():
+            if not line.strip():
+                continue
+            if line.startswith("#"):
+                if "AlleleID" in line:
+                    header = line.lstrip("#").rstrip("\n").split("\t")
+                    break
                 continue
             header = line.rstrip("\n").split("\t")
             break
         if not header:
             return
 
-        rs_idx = _column_index(header, ["RS#"])
+        rs_idx = _column_index(header, ["RS# (dbSNP)", "RS#(dbSNP)", "RS#"])
         clnsig_idx = _column_index(header, ["ClinicalSignificance"])
         review_idx = _column_index(header, ["ReviewStatus"])
         assembly_idx = _column_index(header, ["Assembly"])

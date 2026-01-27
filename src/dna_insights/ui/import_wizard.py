@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -183,10 +183,14 @@ class ImportPage(QWidget):
         worker = ImportWorker(self.state, profile_id, file_path, mode, self._zip_member)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(lambda summary: self._finish_import(summary, progress, thread, worker))
-        worker.error.connect(lambda message: self._fail_import(message, progress, thread, worker))
-        worker.progress.connect(lambda count: status.update({"count": count}) or update_label())
-        worker.stage.connect(lambda stage: status.update({"stage": stage}) or update_label())
+        worker.finished.connect(
+            lambda summary: self._finish_import(summary, progress, thread, worker), Qt.QueuedConnection
+        )
+        worker.error.connect(
+            lambda message: self._fail_import(message, progress, thread, worker), Qt.QueuedConnection
+        )
+        worker.progress.connect(lambda count: status.update({"count": count}) or update_label(), Qt.QueuedConnection)
+        worker.stage.connect(lambda stage: status.update({"stage": stage}) or update_label(), Qt.QueuedConnection)
         thread.start()
 
     def _finish_import(self, summary, progress, thread, worker) -> None:
@@ -228,9 +232,15 @@ class ImportPage(QWidget):
         worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.progress.connect(lambda count: progress.setLabelText(f"Processed {count} variants..."))
-        worker.finished.connect(lambda summary: self._finish_clinvar(summary, progress, thread, worker))
-        worker.error.connect(lambda message: self._fail_clinvar(message, progress, thread, worker))
+        worker.progress.connect(
+            lambda count: progress.setLabelText(f"Processed {count} variants..."), Qt.QueuedConnection
+        )
+        worker.finished.connect(
+            lambda summary: self._finish_clinvar(summary, progress, thread, worker), Qt.QueuedConnection
+        )
+        worker.error.connect(
+            lambda message: self._fail_clinvar(message, progress, thread, worker), Qt.QueuedConnection
+        )
         thread.start()
 
     def _finish_clinvar(self, summary: dict, progress, thread, worker) -> None:

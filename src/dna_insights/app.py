@@ -4,7 +4,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from dna_insights.app_state import AppState
@@ -113,8 +113,12 @@ def main() -> int:
         worker = ClinVarAutoWorker(state.db_path, file_path, rsid_filter)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(lambda summary: _on_auto_import_done(summary, thread, worker))
-        worker.error.connect(lambda message: _on_auto_import_error(message, thread, worker))
+        worker.finished.connect(
+            lambda summary: _on_auto_import_done(summary, thread, worker), Qt.QueuedConnection
+        )
+        worker.error.connect(
+            lambda message: _on_auto_import_error(message, thread, worker), Qt.QueuedConnection
+        )
         thread.start()
 
     def _on_auto_import_done(summary: dict, thread: QThread, worker: ClinVarAutoWorker) -> None:
