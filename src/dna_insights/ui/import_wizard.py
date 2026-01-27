@@ -92,6 +92,7 @@ class ImportPage(QWidget):
 
         self.browse_button.clicked.connect(self._choose_file)
         self.import_button.clicked.connect(self._start_import)
+        self.mode_combo.activated.connect(lambda _index: self.mode_combo.hidePopup())
         self.state.data_changed.connect(self._refresh_profiles)
         self.state.profile_changed.connect(self._sync_current_profile)
 
@@ -189,16 +190,15 @@ class ImportPage(QWidget):
         worker.error.connect(
             lambda message: self._fail_import(message, progress, thread, worker), Qt.QueuedConnection
         )
+        thread.finished.connect(thread.deleteLater)
         worker.progress.connect(lambda count: status.update({"count": count}) or update_label(), Qt.QueuedConnection)
         worker.stage.connect(lambda stage: status.update({"stage": stage}) or update_label(), Qt.QueuedConnection)
         thread.start()
 
     def _finish_import(self, summary, progress, thread, worker) -> None:
         progress.close()
-        thread.quit()
-        thread.wait()
         worker.deleteLater()
-        thread.deleteLater()
+        thread.quit()
         self.summary_label.setText(
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
         )
@@ -207,10 +207,8 @@ class ImportPage(QWidget):
 
     def _fail_import(self, message: str, progress, thread, worker) -> None:
         progress.close()
-        thread.quit()
-        thread.wait()
         worker.deleteLater()
-        thread.deleteLater()
+        thread.quit()
         QMessageBox.critical(self, "Import failed", message)
 
     def _maybe_auto_import_clinvar(self) -> None:
@@ -241,14 +239,13 @@ class ImportPage(QWidget):
         worker.error.connect(
             lambda message: self._fail_clinvar(message, progress, thread, worker), Qt.QueuedConnection
         )
+        thread.finished.connect(thread.deleteLater)
         thread.start()
 
     def _finish_clinvar(self, summary: dict, progress, thread, worker) -> None:
         progress.close()
-        thread.quit()
-        thread.wait()
         worker.deleteLater()
-        thread.deleteLater()
+        thread.quit()
         if summary.get("skipped"):
             return
         self.summary_label.setText(
@@ -258,10 +255,8 @@ class ImportPage(QWidget):
 
     def _fail_clinvar(self, message: str, progress, thread, worker) -> None:
         progress.close()
-        thread.quit()
-        thread.wait()
         worker.deleteLater()
-        thread.deleteLater()
+        thread.quit()
         QMessageBox.warning(self, "ClinVar import failed", message)
 
 
