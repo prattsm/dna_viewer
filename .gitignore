@@ -26,6 +26,9 @@ dist/
 *.sqlite3
 *.db
 *.log
+sam_dna/
+**/AncestryDNA*.txt
+**/AncestryDNA*.zip
 
 # OS files
 .DS_Store
