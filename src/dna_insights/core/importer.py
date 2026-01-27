@@ -28,11 +28,10 @@ def import_ancestry_file(
     kb_version: str,
     opt_in_categories: dict[str, bool],
     mode: str = "curated",
+    zip_member: str | None = None,
     encryption: EncryptionManager | None = None,
     on_progress: Callable[[int], None] | None = None,
 ) -> ImportSummary:
-    if file_path.suffix.lower() != ".txt":
-        raise ValueError("Only .txt Ancestry raw data files are supported. Please unzip and select the .txt file.")
     if mode not in {"curated", "full"}:
         raise ValueError("mode must be 'curated' or 'full'")
 
@@ -86,7 +85,7 @@ def import_ancestry_file(
                 db.insert_genotypes_full(full_rows)
                 full_rows.clear()
 
-    handle = open_ancestry_file(file_path)
+    handle = open_ancestry_file(file_path, member=zip_member)
     try:
         stats = parse_ancestry_handle(handle, on_record=on_record, on_progress=on_progress)
     finally:

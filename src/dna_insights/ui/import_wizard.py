@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from dna_insights.app_state import AppState
 from dna_insights.core.importer import import_ancestry_file
+from dna_insights.core.parser import list_zip_txt_members
 from dna_insights.ui.widgets import prompt_passphrase
 
 
@@ -26,12 +27,15 @@ class ImportWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
 
-    def __init__(self, state: AppState, profile_id: str, file_path: Path, mode: str) -> None:
+    def __init__(
+        self, state: AppState, profile_id: str, file_path: Path, mode: str, zip_member: str | None
+    ) -> None:
         super().__init__()
         self.state = state
         self.profile_id = profile_id
         self.file_path = file_path
         self.mode = mode
+        self.zip_member = zip_member
 
     def run(self) -> None:
         try:
@@ -43,6 +47,7 @@ class ImportWorker(QObject):
                 kb_version=self.state.manifest.kb_version,
                 opt_in_categories=self.state.settings.opt_in_categories,
                 mode=self.mode,
+                zip_member=self.zip_member,
                 encryption=self.state.encryption,
                 on_progress=self.progress.emit,
             )
@@ -55,6 +60,7 @@ class ImportPage(QWidget):
     def __init__(self, state: AppState, parent=None) -> None:
         super().__init__(parent)
         self.state = state
+        self._zip_member: str | None = None
 
         self.profile_combo = QComboBox()
         self.file_input = QLineEdit()
@@ -72,7 +78,7 @@ class ImportPage(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Profile"))
         layout.addWidget(self.profile_combo)
-        layout.addWidget(QLabel("Ancestry raw data file (.txt)"))
+        layout.addWidget(QLabel("Ancestry raw data file (.txt or .zip)"))
         layout.addLayout(file_row)
         layout.addWidget(QLabel("Import mode"))
         layout.addWidget(self.mode_combo)
@@ -108,10 +114,32 @@ class ImportPage(QWidget):
             self,
             "Select AncestryDNA raw data",
             "",
-            "Raw data (*.txt)",
+            "Raw data (*.txt *.zip)",
         )
         if file_path:
             self.file_input.setText(file_path)
+            self._zip_member = None
+            if file_path.lower().endswith(".zip"):
+                members = list_zip_txt_members(Path(file_path))
+                if not members:
+                    QMessageBox.warning(self, "Import", "Zip file does not contain a .txt file.")
+                    self.file_input.setText("")
+                    return
+                if len(members) == 1:
+                    self._zip_member = members[0]
+                    return
+                choice, ok = QInputDialog.getItem(
+                    self,
+                    "Choose raw data file",
+                    "Select the .txt file inside the zip:",
+                    members,
+                    0,
+                    False,
+                )
+                if not ok or not choice:
+                    self.file_input.setText("")
+                    return
+                self._zip_member = choice
 
     def _start_import(self) -> None:
         if self.profile_combo.currentIndex() < 0:
@@ -139,7 +167,7 @@ class ImportPage(QWidget):
         progress.show()
 
         thread = QThread(self)
-        worker = ImportWorker(self.state, profile_id, file_path, mode)
+        worker = ImportWorker(self.state, profile_id, file_path, mode, self._zip_member)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(lambda summary: self._finish_import(summary, progress, thread, worker))

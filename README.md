@@ -6,7 +6,7 @@ DNA Insights is a local-first desktop app for importing **AncestryDNA raw data**
 
 ## Features (MVP)
 - Local profiles with isolated data
-- Import AncestryDNA raw data (.txt)
+- Import AncestryDNA raw data (.txt or .zip)
 - Curated insights (nutrition + wellness) with evidence grades and limitations
 - QC metrics (call rate, malformed rows, duplicates, X/Y consistency check)
 - Variant explorer (search rsID)
@@ -45,7 +45,7 @@ pytest
 
 ## User Guide
 - **Profiles:** Create a profile for each person. All data stays local.
-- **Import:** Choose the raw data `.txt` file and import in curated (default) or full mode. If you downloaded a zip, unzip it first to get the `.txt`.
+- **Import:** Choose the raw data `.txt` file (or a `.zip` containing it). If the zip has multiple `.txt` files, the app asks which one to use.
 - **Insights:** Review evidence-graded findings with limitations and genotype context.
 - **Variant Explorer:** Search by rsID to see your genotype and any matching module interpretation.
 - **Report Export:** Export HTML or PDF reports; optional encryption is available.
@@ -71,6 +71,9 @@ Each module includes evidence grading, limitations, and references that appear i
 - For the full ClinVar dataset, place the **variant summary** file at:
   - `<data_dir>/clinvar/variant_summary.txt.gz`
   - The app will auto-import it on launch (no manual step required).
+- If you are packaging a distribution and want the full file to ship with the app, place it at:
+  - `src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz`
+  - This path is git-ignored to keep large files out of the repo.
 - You can also use the VCF snapshot (`clinvar.vcf.gz`) or import via **Settings** to replace the bundled data.
 - Only high-confidence review statuses (expert panel or practice guideline) and pathogenic/likely pathogenic entries are stored.
 - Any clinical references are informational only and require clinical confirmation.

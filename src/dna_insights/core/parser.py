@@ -42,13 +42,23 @@ class ParsedRecord:
     genotype: str | None
 
 
-def _open_text_from_zip(path: Path) -> io.TextIOBase:
+def list_zip_txt_members(path: Path) -> list[str]:
+    with zipfile.ZipFile(path) as zip_file:
+        return [name for name in zip_file.namelist() if name.lower().endswith(".txt")]
+
+
+def _open_text_from_zip(path: Path, member: str | None) -> io.TextIOBase:
     zip_file = zipfile.ZipFile(path)
     txt_members = [name for name in zip_file.namelist() if name.lower().endswith(".txt")]
     if not txt_members:
         zip_file.close()
         raise ValueError("Zip file does not contain a .txt raw data export.")
-    member = txt_members[0]
+    if member is None:
+        if len(txt_members) == 1:
+            member = txt_members[0]
+        else:
+            zip_file.close()
+            raise ValueError("Zip file contains multiple .txt files; please choose one.")
     raw_handle = zip_file.open(member, "r")
     text_handle = io.TextIOWrapper(raw_handle, encoding="utf-8", errors="replace")
     text_handle._zip_file = zip_file  # type: ignore[attr-defined]
@@ -68,9 +78,9 @@ def close_ancestry_handle(handle: io.TextIOBase) -> None:
     _close_zip_handle(handle)
 
 
-def open_ancestry_file(path: Path) -> io.TextIOBase:
+def open_ancestry_file(path: Path, member: str | None = None) -> io.TextIOBase:
     if path.suffix.lower() == ".zip":
-        raise ValueError("Zip files are not supported. Please unzip and select the .txt file.")
+        return _open_text_from_zip(path, member)
     return path.open("r", encoding="utf-8", errors="replace")
 
 
