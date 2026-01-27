@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from dna_insights.app_state import AppState
 from dna_insights.constants import APP_NAME, LOG_FILENAME
+from dna_insights.core.clinvar import seed_clinvar_if_missing
 from dna_insights.core.knowledge_base import load_manifest, load_modules
 from dna_insights.core.security import EncryptionManager
 from dna_insights.core.settings import load_settings, resolve_data_dir, save_settings
@@ -72,6 +73,7 @@ def main() -> int:
         db_path=data_dir / "dna_insights.sqlite3",
         encryption=encryption,
     )
+    seed_clinvar_if_missing(state.db)
     window = MainWindow(state)
     window.show()
     exit_code = app.exec()

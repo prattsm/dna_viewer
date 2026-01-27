@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
-from dna_insights.core.clinvar import import_clinvar_snapshot
+from dna_insights.core.clinvar import import_clinvar_snapshot, seed_metadata
 from dna_insights.core.settings import resolve_data_dir, save_settings
 
 
@@ -36,6 +36,7 @@ class ClinVarImportWorker(QObject):
                 file_path=self.file_path,
                 db_path=self.db_path,
                 on_progress=self.progress.emit,
+                replace=True,
             )
             self.finished.emit(summary)
         except Exception as exc:  # pragma: no cover - UI only
@@ -123,6 +124,14 @@ class SettingsPage(QWidget):
         if not file_path:
             return
 
+        confirm = QMessageBox.question(
+            self,
+            "Replace ClinVar snapshot",
+            "Importing a snapshot will replace the bundled ClinVar data. Continue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
         progress = QProgressDialog("Importing ClinVar snapshot...", "Cancel", 0, 0, self)
         progress.setWindowTitle("ClinVar Import")
         progress.setAutoClose(False)
@@ -160,9 +169,17 @@ class SettingsPage(QWidget):
         QMessageBox.critical(self, "ClinVar import failed", message)
 
     def _refresh_clinvar_status(self) -> None:
+        seed_meta = seed_metadata()
         meta = self.state.db.get_latest_clinvar_import()
         if not meta:
-            self.clinvar_status_label.setText("ClinVar snapshot: not imported")
+            self.clinvar_status_label.setText(
+                f"ClinVar snapshot: bundled ({seed_meta.get('variant_count', 0)} variants)."
+            )
+            return
+        if meta.get("file_hash_sha256") == seed_meta.get("file_hash_sha256"):
+            self.clinvar_status_label.setText(
+                f"ClinVar snapshot: bundled ({meta.get('variant_count', 0)} variants)."
+            )
             return
         self.clinvar_status_label.setText(
             f"ClinVar snapshot imported {meta.get('imported_at', '')} "
