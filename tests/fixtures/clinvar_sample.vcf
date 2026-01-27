@@ -1,0 +1,5 @@
+##fileformat=VCFv4.2
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+1	10000	rs123	A	G	.	.	CLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel;CLNDN=ConditionA;CLNDATE=20200101
+1	10001	rs456	C	T	.	.	CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts;CLNDN=ConditionB;CLNDATE=20200101
+1	10002	rs789	G	A	.	.	CLNSIG=Benign;CLNREVSTAT=reviewed_by_expert_panel;CLNDN=ConditionC;CLNDATE=20200101

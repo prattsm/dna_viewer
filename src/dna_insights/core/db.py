@@ -8,7 +8,7 @@ from typing import Iterable
 from dna_insights.core.utils import safe_uuid, utc_now_iso
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Database:
@@ -26,75 +26,99 @@ class Database:
     def _migrate(self) -> None:
         cur = self.conn.execute("PRAGMA user_version")
         version = cur.fetchone()[0]
-        if version >= SCHEMA_VERSION:
-            return
+        if version < 1:
+            self.conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS profiles (
+                    id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    encryption_enabled INTEGER NOT NULL DEFAULT 1
+                );
 
-        self.conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS profiles (
-                id TEXT PRIMARY KEY,
-                display_name TEXT NOT NULL,
-                notes TEXT,
-                created_at TEXT NOT NULL,
-                encryption_enabled INTEGER NOT NULL DEFAULT 0
-            );
+                CREATE TABLE IF NOT EXISTS imports (
+                    id TEXT PRIMARY KEY,
+                    profile_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    file_hash_sha256 TEXT NOT NULL,
+                    imported_at TEXT NOT NULL,
+                    parser_version TEXT NOT NULL,
+                    build TEXT NOT NULL,
+                    strand TEXT NOT NULL,
+                    FOREIGN KEY(profile_id) REFERENCES profiles(id)
+                );
 
-            CREATE TABLE IF NOT EXISTS imports (
-                id TEXT PRIMARY KEY,
-                profile_id TEXT NOT NULL,
-                source TEXT NOT NULL,
-                file_hash_sha256 TEXT NOT NULL,
-                imported_at TEXT NOT NULL,
-                parser_version TEXT NOT NULL,
-                build TEXT NOT NULL,
-                strand TEXT NOT NULL,
-                FOREIGN KEY(profile_id) REFERENCES profiles(id)
-            );
+                CREATE TABLE IF NOT EXISTS genotypes_curated (
+                    profile_id TEXT NOT NULL,
+                    rsid TEXT NOT NULL,
+                    chrom TEXT NOT NULL,
+                    pos INTEGER NOT NULL,
+                    genotype TEXT,
+                    PRIMARY KEY(profile_id, rsid)
+                );
 
-            CREATE TABLE IF NOT EXISTS genotypes_curated (
-                profile_id TEXT NOT NULL,
-                rsid TEXT NOT NULL,
-                chrom TEXT NOT NULL,
-                pos INTEGER NOT NULL,
-                genotype TEXT,
-                PRIMARY KEY(profile_id, rsid)
-            );
+                CREATE TABLE IF NOT EXISTS genotypes_full (
+                    profile_id TEXT NOT NULL,
+                    rsid TEXT NOT NULL,
+                    chrom TEXT NOT NULL,
+                    pos INTEGER NOT NULL,
+                    genotype TEXT,
+                    PRIMARY KEY(profile_id, rsid)
+                );
 
-            CREATE TABLE IF NOT EXISTS genotypes_full (
-                profile_id TEXT NOT NULL,
-                rsid TEXT NOT NULL,
-                chrom TEXT NOT NULL,
-                pos INTEGER NOT NULL,
-                genotype TEXT,
-                PRIMARY KEY(profile_id, rsid)
-            );
+                CREATE INDEX IF NOT EXISTS idx_genotypes_full_profile_rsid
+                    ON genotypes_full(profile_id, rsid);
 
-            CREATE INDEX IF NOT EXISTS idx_genotypes_full_profile_rsid
-                ON genotypes_full(profile_id, rsid);
+                CREATE INDEX IF NOT EXISTS idx_genotypes_full_profile_chrom_pos
+                    ON genotypes_full(profile_id, chrom, pos);
 
-            CREATE INDEX IF NOT EXISTS idx_genotypes_full_profile_chrom_pos
-                ON genotypes_full(profile_id, chrom, pos);
+                CREATE TABLE IF NOT EXISTS insight_results (
+                    id TEXT PRIMARY KEY,
+                    profile_id TEXT NOT NULL,
+                    module_id TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    generated_at TEXT NOT NULL,
+                    kb_version TEXT NOT NULL,
+                    FOREIGN KEY(profile_id) REFERENCES profiles(id)
+                );
+                """
+            )
 
-            CREATE TABLE IF NOT EXISTS insight_results (
-                id TEXT PRIMARY KEY,
-                profile_id TEXT NOT NULL,
-                module_id TEXT NOT NULL,
-                result_json TEXT NOT NULL,
-                generated_at TEXT NOT NULL,
-                kb_version TEXT NOT NULL,
-                FOREIGN KEY(profile_id) REFERENCES profiles(id)
-            );
-            """
-        )
-        self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        self.conn.commit()
+        if version < 2:
+            self.conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS clinvar_variants (
+                    rsid TEXT PRIMARY KEY,
+                    chrom TEXT NOT NULL,
+                    pos INTEGER NOT NULL,
+                    ref TEXT NOT NULL,
+                    alt TEXT NOT NULL,
+                    clinical_significance TEXT,
+                    review_status TEXT,
+                    conditions TEXT,
+                    last_evaluated TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS clinvar_imports (
+                    id TEXT PRIMARY KEY,
+                    file_hash_sha256 TEXT NOT NULL,
+                    imported_at TEXT NOT NULL,
+                    variant_count INTEGER NOT NULL
+                );
+                """
+            )
+
+        if version < SCHEMA_VERSION:
+            self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            self.conn.commit()
 
     def create_profile(self, display_name: str, notes: str | None = None) -> str:
         profile_id = safe_uuid()
         self.conn.execute(
             "INSERT INTO profiles (id, display_name, notes, created_at, encryption_enabled)"
             " VALUES (?, ?, ?, ?, ?)",
-            (profile_id, display_name, notes, utc_now_iso(), 0),
+            (profile_id, display_name, notes, utc_now_iso(), 1),
         )
         self.conn.commit()
         return profile_id
@@ -247,3 +271,84 @@ class Database:
         )
         row = cur.fetchone()
         return dict(row) if row else None
+
+    def upsert_clinvar_variants(self, rows: Iterable[tuple]) -> None:
+        self.conn.executemany(
+            """
+            INSERT OR REPLACE INTO clinvar_variants
+                (rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+
+    def add_clinvar_import(self, file_hash_sha256: str, variant_count: int) -> str:
+        import_id = safe_uuid()
+        self.conn.execute(
+            """
+            INSERT INTO clinvar_imports (id, file_hash_sha256, imported_at, variant_count)
+            VALUES (?, ?, ?, ?)
+            """,
+            (import_id, file_hash_sha256, utc_now_iso(), variant_count),
+        )
+        self.conn.commit()
+        return import_id
+
+    def get_latest_clinvar_import(self) -> dict | None:
+        cur = self.conn.execute(
+            """
+            SELECT id, file_hash_sha256, imported_at, variant_count
+            FROM clinvar_imports
+            ORDER BY imported_at DESC
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def get_clinvar_variant(self, rsid: str) -> dict | None:
+        cur = self.conn.execute(
+            """
+            SELECT rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated
+            FROM clinvar_variants
+            WHERE rsid = ?
+            """,
+            (rsid,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def _has_full_genotypes(self, profile_id: str) -> bool:
+        cur = self.conn.execute(
+            "SELECT 1 FROM genotypes_full WHERE profile_id = ? LIMIT 1",
+            (profile_id,),
+        )
+        return cur.fetchone() is not None
+
+    def get_clinvar_matches(self, profile_id: str, limit: int = 5) -> list[dict]:
+        table = "genotypes_full" if self._has_full_genotypes(profile_id) else "genotypes_curated"
+        cur = self.conn.execute(
+            f"""
+            SELECT g.rsid, g.genotype, c.clinical_significance, c.review_status
+            FROM {table} g
+            JOIN clinvar_variants c ON g.rsid = c.rsid
+            WHERE g.profile_id = ?
+            LIMIT ?
+            """,
+            (profile_id, limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def count_clinvar_matches(self, profile_id: str) -> int:
+        table = "genotypes_full" if self._has_full_genotypes(profile_id) else "genotypes_curated"
+        cur = self.conn.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM {table} g
+            JOIN clinvar_variants c ON g.rsid = c.rsid
+            WHERE g.profile_id = ?
+            """,
+            (profile_id,),
+        )
+        row = cur.fetchone()
+        return int(row["total"]) if row else 0

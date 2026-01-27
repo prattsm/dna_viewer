@@ -11,11 +11,13 @@ def _render_insight_card(result: dict) -> str:
         for rsid, genotype in genotypes.items()
     )
     references = "".join(f"<li>{escape(ref)}</li>" for ref in result.get("references", []))
+    suggestion = result.get("suggestion")
 
     return f"""
       <div class="card">
         <h3>{escape(result.get('display_name', ''))}</h3>
         <p class="summary">{escape(result.get('summary', ''))}</p>
+        {f"<p><strong>Possible actions (non-medical):</strong> {escape(suggestion)}</p>" if suggestion else ""}
         <p><strong>Evidence:</strong> {escape(evidence.get('grade', ''))} - {escape(evidence.get('summary', ''))}</p>
         <p><strong>Limitations:</strong> {escape(result.get('limitations', ''))}</p>
         <details>

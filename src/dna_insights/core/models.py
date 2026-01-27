@@ -23,6 +23,7 @@ class KnowledgeModule(BaseModel):
     rsids: list[str]
     rules: list[ModuleRule]
     default_summary: str
+    suggestion: str | None = None
     evidence_level: EvidenceLevel
     limitations: str
     references: list[str]
@@ -40,6 +41,7 @@ class InsightResult(BaseModel):
     category: str
     display_name: str
     summary: str
+    suggestion: str | None = None
     evidence_level: EvidenceLevel
     limitations: str
     references: list[str]

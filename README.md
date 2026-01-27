@@ -11,6 +11,7 @@ DNA Insights is a local-first desktop app for importing **AncestryDNA raw data**
 - QC metrics (call rate, malformed rows, duplicates, X/Y consistency check)
 - Variant explorer (search rsID)
 - Report export (HTML/PDF) with optional encryption
+- Optional ClinVar snapshot import (high-confidence filtering, opt-in clinical view)
 
 ## Safety & guardrails
 - No disease risk or diagnostic claims
@@ -47,7 +48,7 @@ pytest
 
 ## Data & privacy
 - All data is stored locally in the selected data directory.
-- Raw uploads can be stored encrypted with a passphrase (Fernet via `cryptography`).
+- Raw uploads are encrypted with a passphrase (Fernet via `cryptography`) and encryption is required for all profiles.
 - Reports can be exported encrypted if enabled in settings.
 - Environment variable `DNA_INSIGHTS_DATA_DIR` overrides the data directory for the current run.
 
@@ -59,3 +60,11 @@ The curated knowledge base ships with a small, conservative set of modules:
 - FTO trait association (rs9939609)
 
 Each module includes evidence grading, limitations, and references that appear in reports.
+
+## ClinVar snapshot import (optional)
+- Import a local ClinVar VCF/VCF.GZ snapshot in **Settings**.
+- Only high-confidence review statuses (expert panel or practice guideline) and pathogenic/likely pathogenic entries are stored.
+- Any clinical references are informational only and require clinical confirmation.
+
+## License
+Free to use under the MIT License.

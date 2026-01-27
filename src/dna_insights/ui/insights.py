@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
+from dna_insights.core.insight_engine import build_clinvar_summary
 
 
 class InsightsPage(QWidget):
@@ -49,10 +50,20 @@ class InsightsPage(QWidget):
             self.container_layout.addWidget(QLabel("No insights yet. Import a file first."))
             return
 
+        if self.state.settings.opt_in_categories.get("clinical", False):
+            clinvar_import = self.state.db.get_latest_clinvar_import()
+            if clinvar_import:
+                count = self.state.db.count_clinvar_matches(profile["id"])
+                sample = self.state.db.get_clinvar_matches(profile["id"], limit=3)
+                results.append(build_clinvar_summary(count, sample, clinvar_import))
+
         for result in results:
             group = QGroupBox(result.get("display_name", "Insight"))
             group_layout = QVBoxLayout()
             group_layout.addWidget(QLabel(result.get("summary", "")))
+            suggestion = result.get("suggestion")
+            if suggestion:
+                group_layout.addWidget(QLabel(f"Possible actions (non-medical): {suggestion}"))
             evidence = result.get("evidence_level", {})
             group_layout.addWidget(
                 QLabel(f"Evidence: {evidence.get('grade', '')} - {evidence.get('summary', '')}")

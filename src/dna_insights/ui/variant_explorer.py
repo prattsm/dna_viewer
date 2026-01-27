@@ -50,10 +50,28 @@ class VariantExplorerPage(QWidget):
 
         matched_modules = [module for module in self.state.modules if rsid in module.rsids]
         if not matched_modules:
-            self.result_label.setText(base_text)
+            clinvar_info = None
+            if self.state.settings.opt_in_categories.get("clinical", False):
+                clinvar_info = self.state.db.get_clinvar_variant(rsid)
+            if clinvar_info:
+                extra = (
+                    f"\nClinVar: {clinvar_info.get('clinical_significance', '')}"
+                    f" (review: {clinvar_info.get('review_status', '')})"
+                )
+                self.result_label.setText(base_text + extra)
+            else:
+                self.result_label.setText(base_text)
             return
 
         genotype_map = {rsid: record}
         results = evaluate_modules(genotype_map, matched_modules, self.state.settings.opt_in_categories)
         summaries = "\n".join(f"{item['display_name']}: {item['summary']}" for item in results)
+        clinvar_info = None
+        if self.state.settings.opt_in_categories.get("clinical", False):
+            clinvar_info = self.state.db.get_clinvar_variant(rsid)
+        if clinvar_info:
+            summaries += (
+                f"\nClinVar: {clinvar_info.get('clinical_significance', '')}"
+                f" (review: {clinvar_info.get('review_status', '')})"
+            )
         self.result_label.setText(base_text + "\n" + summaries)

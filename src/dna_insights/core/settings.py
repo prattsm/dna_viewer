@@ -16,7 +16,7 @@ class AppSettings(BaseModel):
         "clinical": False,
         "pgx": False,
     })
-    encryption_enabled: bool = False
+    encryption_enabled: bool = True
     encryption_salt: str | None = None
     app_lock_enabled: bool = False
 
@@ -45,6 +45,8 @@ def load_settings() -> Tuple[AppSettings, bool]:
     if config_path.exists():
         data = json.loads(config_path.read_text())
         settings = AppSettings(**data)
+        if not settings.encryption_enabled:
+            settings.encryption_enabled = True
         return settings, False
 
     settings = AppSettings(data_dir=str(default_data_dir()))

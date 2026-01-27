@@ -4,7 +4,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QFileDialog
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from dna_insights.app_state import AppState
 from dna_insights.constants import APP_NAME, LOG_FILENAME
@@ -12,6 +12,7 @@ from dna_insights.core.knowledge_base import load_manifest, load_modules
 from dna_insights.core.security import EncryptionManager
 from dna_insights.core.settings import load_settings, resolve_data_dir, save_settings
 from dna_insights.ui.main_window import MainWindow
+from dna_insights.ui.widgets import prompt_passphrase
 
 
 def _setup_logging(log_dir: Path) -> None:
@@ -51,6 +52,18 @@ def main() -> int:
     manifest = load_manifest()
     modules = load_modules(manifest)
     encryption = EncryptionManager(settings)
+
+    if settings.encryption_enabled and not settings.encryption_salt:
+        passphrase = prompt_passphrase(confirm=True)
+        if not passphrase:
+            QMessageBox.critical(
+                None,
+                APP_NAME,
+                "A passphrase is required to enable mandatory encryption. The app will now exit.",
+            )
+            return 1
+        encryption.unlock(passphrase)
+        save_settings(settings)
 
     state = AppState(
         settings=settings,

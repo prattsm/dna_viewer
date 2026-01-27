@@ -16,6 +16,7 @@
     }
   ],
   "default_summary": "No call or unrecognized genotype for rs4988235.",
+  "suggestion": "If dairy causes discomfort, consider lactose-free options or smaller servings. This is not medical advice.",
   "evidence_level": {
     "grade": "B",
     "summary": "Multiple studies support an association, but effects are population-dependent."

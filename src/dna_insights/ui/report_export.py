@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
+from dna_insights.core.insight_engine import build_clinvar_summary
 from dna_insights.core.report import build_html_report
 from dna_insights.ui.widgets import prompt_passphrase
 
@@ -65,6 +66,12 @@ class ReportExportPage(QWidget):
         if not insights:
             QMessageBox.information(self, "Export", "No insights available for export.")
             return None, None, None
+        if self.state.settings.opt_in_categories.get("clinical", False):
+            clinvar_import = self.state.db.get_latest_clinvar_import()
+            if clinvar_import:
+                count = self.state.db.count_clinvar_matches(profile["id"])
+                sample = self.state.db.get_clinvar_matches(profile["id"], limit=3)
+                insights.append(build_clinvar_summary(count, sample, clinvar_import))
         if self.redacted_checkbox.isChecked():
             for item in insights:
                 item["genotypes"] = {}

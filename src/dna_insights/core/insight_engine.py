@@ -39,6 +39,7 @@ def evaluate_modules(
             "category": module.category,
             "display_name": module.display_name,
             "summary": summary,
+            "suggestion": module.suggestion,
             "evidence_level": module.evidence_level.model_dump(),
             "limitations": module.limitations,
             "references": module.references,
@@ -60,10 +61,37 @@ def build_qc_result(qc: QCReport) -> dict:
             f"Duplicates {qc.duplicates}, malformed rows {qc.malformed_rows}. "
             f"Sex check: {qc.sex_check}."
         ),
+        "suggestion": None,
         "evidence_level": EvidenceLevel(grade="A", summary="Derived directly from file parsing.").model_dump(),
         "limitations": "QC is a data consistency check, not an identity or medical assessment.",
         "references": [],
         "genotypes": {},
         "rule_matched": None,
         "qc": qc.model_dump(),
+    }
+
+
+def build_clinvar_summary(match_count: int, sample: list[dict], import_meta: dict | None) -> dict:
+    sample_text = ", ".join(item["rsid"] for item in sample) if sample else "None"
+    import_note = ""
+    if import_meta:
+        import_note = f" ClinVar snapshot imported {import_meta.get('imported_at', '')}."
+    summary = (
+        f"Found {match_count} rsIDs in your data that appear in the ClinVar snapshot."
+        f" Example matches: {sample_text}.{import_note}"
+    )
+    return {
+        "module_id": "clinical_summary",
+        "category": "clinical",
+        "display_name": "Clinical references (ClinVar, opt-in)",
+        "summary": summary,
+        "suggestion": "Do not change medical care based on this app. Discuss any concerns with a clinician.",
+        "evidence_level": EvidenceLevel(grade="A", summary="ClinVar listing reference only.").model_dump(),
+        "limitations": (
+            "SNP chip results can be wrong and do not confirm clinical significance. "
+            "Only high-confidence ClinVar entries are shown, and clinical confirmation is required."
+        ),
+        "references": ["ClinVar (NCBI) snapshot"],
+        "genotypes": {},
+        "rule_matched": None,
     }
