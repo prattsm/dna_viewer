@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
+from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot
 from dna_insights.core.importer import import_ancestry_file
 from dna_insights.core.parser import list_zip_txt_members
 from dna_insights.ui.widgets import prompt_passphrase
@@ -185,6 +186,7 @@ class ImportPage(QWidget):
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
         )
         self.state.data_changed.emit()
+        self._maybe_auto_import_clinvar()
 
     def _fail_import(self, message: str, progress, thread, worker) -> None:
         progress.close()
@@ -193,3 +195,73 @@ class ImportPage(QWidget):
         worker.deleteLater()
         thread.deleteLater()
         QMessageBox.critical(self, "Import failed", message)
+
+    def _maybe_auto_import_clinvar(self) -> None:
+        data_dir = self.state.db_path.parent
+        clinvar_path = auto_import_path(data_dir)
+        if not clinvar_path:
+            return
+        rsid_filter = self.state.db.get_all_rsids()
+        if not rsid_filter:
+            return
+
+        progress = QProgressDialog("Updating ClinVar matches...", "Cancel", 0, 0, self)
+        progress.setWindowTitle("ClinVar Import")
+        progress.setAutoClose(False)
+        progress.setCancelButton(None)
+        progress.show()
+
+        thread = QThread(self)
+        worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(lambda count: progress.setLabelText(f"Processed {count} variants..."))
+        worker.finished.connect(lambda summary: self._finish_clinvar(summary, progress, thread, worker))
+        worker.error.connect(lambda message: self._fail_clinvar(message, progress, thread, worker))
+        thread.start()
+
+    def _finish_clinvar(self, summary: dict, progress, thread, worker) -> None:
+        progress.close()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        if summary.get("skipped"):
+            return
+        self.summary_label.setText(
+            self.summary_label.text() + f" ClinVar matches updated ({summary.get('variant_count', 0)} variants)."
+        )
+        self.state.data_changed.emit()
+
+    def _fail_clinvar(self, message: str, progress, thread, worker) -> None:
+        progress.close()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        QMessageBox.warning(self, "ClinVar import failed", message)
+
+
+class ClinVarAutoWorker(QObject):
+    progress = Signal(int)
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str]) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.file_path = file_path
+        self.rsid_filter = rsid_filter
+
+    def run(self) -> None:
+        try:
+            summary = import_clinvar_snapshot(
+                file_path=self.file_path,
+                db_path=self.db_path,
+                on_progress=self.progress.emit,
+                replace=True,
+                rsid_filter=self.rsid_filter,
+            )
+            self.finished.emit(summary)
+        except Exception as exc:  # pragma: no cover - UI only
+            self.error.emit(str(exc))
