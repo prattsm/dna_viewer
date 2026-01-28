@@ -635,14 +635,14 @@ def import_clinvar_cache(
                 conn.set_progress_handler(progress_handler, 10000)
                 progress_handler_set = True
 
-            db.begin()
             if replace:
-                db.clear_clinvar_variants(commit=False)
-                db.clear_clinvar_checked(commit=False)
+                db.clear_clinvar_variants(commit=True)
+                db.clear_clinvar_checked(commit=True)
 
             conn.execute("DROP TABLE IF EXISTS temp.rsid_input")
             conn.execute("DROP TABLE IF EXISTS temp.missing_rsids")
             conn.execute("CREATE TEMP TABLE rsid_input (rsid TEXT PRIMARY KEY)")
+            conn.commit()
 
             inserted = 0
             insert_start = time.monotonic()
@@ -653,6 +653,7 @@ def import_clinvar_cache(
                 chunk = rsids[i : i + chunk_size]
                 rows = [(rsid,) for rsid in chunk]
                 conn.executemany("INSERT OR IGNORE INTO rsid_input (rsid) VALUES (?)", rows)
+                conn.commit()
                 inserted += len(chunk)
                 if total > 0:
                     elapsed = max(time.monotonic() - insert_start, 0.001)
@@ -674,6 +675,7 @@ def import_clinvar_cache(
                 WHERE c.rsid IS NULL
                 """
             )
+            conn.commit()
 
             row = conn.execute(
                 "SELECT COUNT(*) AS total, MIN(rowid) AS min_id, MAX(rowid) AS max_id FROM missing_rsids"
@@ -714,18 +716,31 @@ def import_clinvar_cache(
                 if chunk_total == 0:
                     continue
 
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO clinvar_variants
-                        (rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated)
-                    SELECT c.rsid, c.chrom, c.pos, c.ref, c.alt, c.clinical_significance, c.review_status,
-                           c.conditions, c.last_evaluated
-                    FROM missing_rsids m
-                    JOIN clinvar_cache.clinvar_variants c ON c.rsid = m.rsid
-                    WHERE m.rowid BETWEEN ? AND ?
-                    """,
-                    (start_id, end_id),
-                )
+                try:
+                    conn.execute("BEGIN")
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO clinvar_variants
+                            (rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated)
+                        SELECT c.rsid, c.chrom, c.pos, c.ref, c.alt, c.clinical_significance, c.review_status,
+                               c.conditions, c.last_evaluated
+                        FROM missing_rsids m
+                        JOIN clinvar_cache.clinvar_variants c ON c.rsid = m.rsid
+                        WHERE m.rowid BETWEEN ? AND ?
+                        """,
+                        (start_id, end_id),
+                    )
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO clinvar_checked (rsid)
+                        SELECT rsid FROM missing_rsids WHERE rowid BETWEEN ? AND ?
+                        """,
+                        (start_id, end_id),
+                    )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
 
                 processed_missing += chunk_total
                 elapsed = max(time.monotonic() - import_start, 0.001)
@@ -741,9 +756,7 @@ def import_clinvar_cache(
                 else:
                     emit_progress(processed_missing)
 
-            conn.execute("INSERT OR IGNORE INTO clinvar_checked (rsid) SELECT rsid FROM missing_rsids")
-            db.add_clinvar_import(file_hash, matched_total, commit=False)
-            db.commit()
+            db.add_clinvar_import(file_hash, matched_total, commit=True)
         except sqlite3.OperationalError as exc:
             if cancel_check and cancel_check() and "interrupted" in str(exc).lower():
                 try:
@@ -813,10 +826,9 @@ def import_clinvar_snapshot(
         total_bytes = _total_bytes(file_path)
 
         try:
-            db.begin()
             if replace:
-                db.clear_clinvar_variants(commit=False)
-                db.clear_clinvar_checked(commit=False)
+                db.clear_clinvar_variants(commit=True)
+                db.clear_clinvar_checked(commit=True)
 
             if _is_variant_summary(file_path):
                 for row in _iter_variant_summary(
@@ -835,6 +847,7 @@ def import_clinvar_snapshot(
                         if cancel_check and cancel_check():
                             raise ImportCancelled("ClinVar import cancelled.")
                         db.upsert_clinvar_variants(batch)
+                        db.commit()
                         batch.clear()
 
                     if on_progress and processed % 5000 == 0:
@@ -904,6 +917,7 @@ def import_clinvar_snapshot(
                             if cancel_check and cancel_check():
                                 raise ImportCancelled("ClinVar import cancelled.")
                             db.upsert_clinvar_variants(batch)
+                            db.commit()
                             batch.clear()
 
                         if on_progress and processed % 5000 == 0:
@@ -915,11 +929,11 @@ def import_clinvar_snapshot(
                 if cancel_check and cancel_check():
                     raise ImportCancelled("ClinVar import cancelled.")
                 db.upsert_clinvar_variants(batch)
+                db.commit()
 
             if rsid_filter is not None:
-                db.mark_clinvar_checked(rsid_filter, commit=False)
-            db.add_clinvar_import(file_hash, len(unique_rsids), commit=False)
-            db.commit()
+                db.mark_clinvar_checked(rsid_filter, commit=True)
+            db.add_clinvar_import(file_hash, len(unique_rsids), commit=True)
         except ImportCancelled:
             try:
                 db.rollback()
