@@ -45,7 +45,7 @@ pytest
 
 ## User Guide
 - **Start screen:** Choose a profile (or create one) before accessing the rest of the app.
-- **Profiles:** Create a profile for each person. All data stays local.
+- **Profiles:** Use the start screen or “Switch profile” in the top bar to change profiles.
 - **Import:** Choose the raw data `.txt` file (or a `.zip` containing it). If the zip has multiple `.txt` files, the app asks which one to use. You can cancel an import mid-run; cancelled imports are marked as such and do not write genotypes/insights.
 - **Insights:** Review evidence-graded findings with limitations and genotype context.
 - **Variant Explorer:** Search by rsID to see your genotype and any matching module interpretation.

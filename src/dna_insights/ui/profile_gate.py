@@ -35,11 +35,17 @@ class ProfileGatePage(QWidget):
 
         self.create_button = QPushButton("Create profile")
         self.create_button.setObjectName("secondaryButton")
+        self.rename_button = QPushButton("Rename")
+        self.delete_button = QPushButton("Delete")
         self.continue_button = QPushButton("Continue")
         self.continue_button.setObjectName("primaryButton")
         self.continue_button.setEnabled(False)
+        self.rename_button.setEnabled(False)
+        self.delete_button.setEnabled(False)
 
         self.create_button.clicked.connect(self._create_profile)
+        self.rename_button.clicked.connect(self._rename_profile)
+        self.delete_button.clicked.connect(self._delete_profile)
         self.continue_button.clicked.connect(self._continue)
 
         list_card = QFrame()
@@ -55,6 +61,8 @@ class ProfileGatePage(QWidget):
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
         action_row.addWidget(self.create_button)
+        action_row.addWidget(self.rename_button)
+        action_row.addWidget(self.delete_button)
         action_row.addStretch()
         action_row.addWidget(self.continue_button)
 
@@ -82,7 +90,10 @@ class ProfileGatePage(QWidget):
         self._update_continue_state()
 
     def _update_continue_state(self) -> None:
-        self.continue_button.setEnabled(len(self.list_widget.selectedItems()) == 1)
+        has_selection = len(self.list_widget.selectedItems()) == 1
+        self.continue_button.setEnabled(has_selection)
+        self.rename_button.setEnabled(has_selection)
+        self.delete_button.setEnabled(has_selection)
 
     def _create_profile(self) -> None:
         name, ok = QInputDialog.getText(self, "Create profile", "Profile name")
@@ -91,6 +102,35 @@ class ProfileGatePage(QWidget):
         profile_id = self.state.create_profile(name.strip())
         self.state.set_current_profile(profile_id)
         self.profile_selected.emit(profile_id)
+
+    def _rename_profile(self) -> None:
+        items = self.list_widget.selectedItems()
+        if not items:
+            return
+        profile_id = items[0].data(Qt.UserRole)
+        profile = self.state.db.get_profile(profile_id)
+        if not profile:
+            return
+        name, ok = QInputDialog.getText(self, "Rename profile", "New name", text=profile["display_name"])
+        if not ok or not name.strip():
+            return
+        self.state.rename_profile(profile_id, name.strip())
+
+    def _delete_profile(self) -> None:
+        items = self.list_widget.selectedItems()
+        if not items:
+            return
+        profile_id = items[0].data(Qt.UserRole)
+        profile = self.state.db.get_profile(profile_id)
+        if not profile:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Delete profile",
+            f"Delete profile '{profile['display_name']}' and all local data?",
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.state.delete_profile(profile_id)
 
     def _continue(self) -> None:
         items = self.list_widget.selectedItems()

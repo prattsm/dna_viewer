@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QApplication
 
 THEME_QSS = """
 QWidget {
-    background: #F7F9F8;
+    background: #F9F6F2;
     color: #111827;
     font-family: "IBM Plex Sans", "Source Sans 3", "Noto Sans", "Segoe UI", sans-serif;
     font-size: 13px;
@@ -12,7 +12,7 @@ QWidget {
 
 QWidget#appRoot {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #F7F9F8,
+        stop:0 #F9F6F2,
         stop:1 #FFFFFF);
 }
 
@@ -27,21 +27,35 @@ QLabel#sectionLabel {
 }
 
 QLabel#helperLabel {
-    color: #6B7280;
+    color: #6F6A66;
     font-size: 12px;
 }
 
 QLabel#bannerLabel {
-    background: #FFF7ED;
-    border: 1px solid #FDBA74;
+    background: #FFF3E6;
+    border: 1px solid #F7C59F;
     border-radius: 10px;
     padding: 8px 12px;
 }
 
 QFrame#card {
-    background: #F8FAF9;
-    border: 1px solid #E5E7EB;
+    background: #FFFFFF;
+    border: 1px solid #E9E2DA;
+    border-radius: 14px;
+}
+
+QFrame#topBar {
+    background: #FFFFFF;
+    border: 1px solid #E9E2DA;
+    border-radius: 14px;
+}
+
+QLabel#profileChip {
+    background: #E6F6F1;
+    border: 1px solid #B7E4D7;
     border-radius: 12px;
+    padding: 4px 10px;
+    font-weight: 600;
 }
 
 QGroupBox {
@@ -97,21 +111,21 @@ QPushButton:hover {
 }
 
 QPushButton#primaryButton {
-    background: #1F8A70;
-    border: 1px solid #1F8A70;
+    background: #2B8C74;
+    border: 1px solid #2B8C74;
     color: #FFFFFF;
     font-weight: 600;
 }
 
 QPushButton#primaryButton:hover {
-    background: #18715C;
-    border: 1px solid #18715C;
+    background: #23725E;
+    border: 1px solid #23725E;
 }
 
 QPushButton#secondaryButton {
     background: #FFFFFF;
-    border: 1px solid #E84A8A;
-    color: #E84A8A;
+    border: 1px solid #E56F9A;
+    color: #E56F9A;
 }
 
 QPushButton#secondaryButton:hover {
@@ -121,7 +135,7 @@ QPushButton#secondaryButton:hover {
 QPushButton#linkButton {
     background: transparent;
     border: none;
-    color: #E84A8A;
+    color: #E56F9A;
     padding: 0px;
     text-align: left;
 }
@@ -135,7 +149,7 @@ QPushButton:disabled {
 QLineEdit,
 QComboBox {
     padding: 6px 10px;
-    border: 1px solid #E5E7EB;
+    border: 1px solid #E9E2DA;
     border-radius: 10px;
     background: #FFFFFF;
     min-height: 32px;
@@ -143,7 +157,7 @@ QComboBox {
 
 QLineEdit:focus,
 QComboBox:focus {
-    border: 1px solid #1F8A70;
+    border: 1px solid #2B8C74;
 }
 
 QComboBox::drop-down {
@@ -151,29 +165,29 @@ QComboBox::drop-down {
 }
 
 QProgressBar {
-    border: 1px solid #E5E7EB;
+    border: 1px solid #E9E2DA;
     border-radius: 8px;
-    background: #F8FAF9;
+    background: #FFFDFB;
     text-align: center;
 }
 
 QProgressBar::chunk {
-    background: #1F8A70;
+    background: #2B8C74;
     border-radius: 6px;
 }
 
 QListWidget {
-    background: #F8FAF9;
-    border: 1px solid #E5E7EB;
-    border-radius: 12px;
+    background: #FFFFFF;
+    border: 1px solid #E9E2DA;
+    border-radius: 14px;
     padding: 8px;
     font-size: 13px;
 }
 
 QListWidget#navList {
     background: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 14px;
+    border: 1px solid #E9E2DA;
+    border-radius: 16px;
     padding: 10px;
     min-width: 180px;
     font-size: 14px;
@@ -181,12 +195,17 @@ QListWidget#navList {
 
 QListWidget#navList::item {
     padding: 10px 12px;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 
 QListWidget::item:selected {
     background: #E6F6F1;
     color: #111827;
+}
+
+QListWidget#navList::item:selected {
+    background: #E6F6F1;
+    border: 1px solid #B7E4D7;
 }
 
 QScrollArea {

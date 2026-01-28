@@ -92,7 +92,7 @@ class ImportWorker(QObject):
 
 
 class ImportPage(QWidget):
-    manage_profiles_requested = Signal()
+    switch_profile_requested = Signal()
 
     def __init__(self, state: AppState, parent=None) -> None:
         super().__init__(parent)
@@ -110,7 +110,8 @@ class ImportPage(QWidget):
         self._clinvar_cancel_button: QPushButton | None = None
         self._last_import_ok = False
 
-        self.profile_combo = QComboBox()
+        self.profile_value = QLabel("No profile selected")
+        self.profile_value.setObjectName("profileChip")
         self.file_input = QLineEdit()
         self.file_input.setReadOnly(True)
         self.browse_button = QPushButton("Browse")
@@ -126,7 +127,8 @@ class ImportPage(QWidget):
         self.subtitle_label = QLabel("Stored locally. No network calls unless you opt in.")
         self.subtitle_label.setObjectName("helperLabel")
 
-        self.manage_profiles_button = QPushButton("Manage profiles...")
+        self.switch_profile_button = QPushButton("Switch profile")
+        self.switch_profile_button.setObjectName("linkButton")
         self.manage_profiles_button.setObjectName("linkButton")
 
         self.zip_member_label = QLabel("")
@@ -154,8 +156,8 @@ class ImportPage(QWidget):
         profile_label = QLabel("Profile")
         profile_label.setObjectName("sectionLabel")
         profile_layout.addWidget(profile_label)
-        profile_layout.addWidget(self.profile_combo)
-        profile_layout.addWidget(self.manage_profiles_button)
+        profile_layout.addWidget(self.profile_value)
+        profile_layout.addWidget(self.switch_profile_button)
 
         file_card = QFrame()
         file_card.setObjectName("card")
@@ -207,11 +209,10 @@ class ImportPage(QWidget):
 
         self.browse_button.clicked.connect(self._choose_file)
         self.import_button.clicked.connect(self._start_import)
-        self.manage_profiles_button.clicked.connect(self._manage_profiles)
+        self.switch_profile_button.clicked.connect(self._switch_profile)
         self.advanced_toggle.toggled.connect(self._toggle_advanced)
         self.mode_combo.currentIndexChanged.connect(self._update_mode_helper)
         self.file_input.textChanged.connect(self._update_import_button_state)
-        self.profile_combo.currentIndexChanged.connect(self._update_import_button_state)
         self.state.data_changed.connect(self._refresh_profiles)
         self.state.profile_changed.connect(self._sync_current_profile)
 
@@ -221,24 +222,19 @@ class ImportPage(QWidget):
         self._update_import_button_state()
 
     def _refresh_profiles(self) -> None:
-        current = self.state.current_profile_id
-        self.profile_combo.clear()
-        for profile in self.state.list_profiles():
-            self.profile_combo.addItem(profile["display_name"], profile["id"])
-        if current:
-            index = self.profile_combo.findData(current)
-            if index >= 0:
-                self.profile_combo.setCurrentIndex(index)
+        self._sync_current_profile(self.state.current_profile_id or "")
         self._update_import_button_state()
 
     def _sync_current_profile(self, profile_id: str) -> None:
-        index = self.profile_combo.findData(profile_id)
-        if index >= 0:
-            self.profile_combo.setCurrentIndex(index)
+        profile = self.state.current_profile()
+        if profile:
+            self.profile_value.setText(profile.get("display_name", "Profile"))
+        else:
+            self.profile_value.setText("No profile selected")
         self._update_import_button_state()
 
-    def _manage_profiles(self) -> None:
-        self.manage_profiles_requested.emit()
+    def _switch_profile(self) -> None:
+        self.switch_profile_requested.emit()
 
     def _toggle_advanced(self, checked: bool) -> None:
         self.mode_combo.setEnabled(checked)
@@ -274,7 +270,7 @@ class ImportPage(QWidget):
             self.status_text.setText(text)
 
     def _update_import_button_state(self) -> None:
-        has_profile = self.profile_combo.currentIndex() >= 0
+        has_profile = self.state.current_profile_id is not None
         has_file = bool(self.file_input.text())
         running = self._import_thread is not None and self._import_thread.isRunning()
         self.import_button.setEnabled(has_profile and has_file and not running)
@@ -321,7 +317,7 @@ class ImportPage(QWidget):
             self._update_import_button_state()
 
     def _start_import(self) -> None:
-        if self.profile_combo.currentIndex() < 0:
+        if self.state.current_profile_id is None:
             QMessageBox.information(self, "Import", "Create and select a profile first.")
             return
         if not self.file_input.text():
@@ -345,7 +341,10 @@ class ImportPage(QWidget):
                 QMessageBox.critical(self, "Import", f"Failed to unlock encryption: {exc}")
                 return
 
-        profile_id = self.profile_combo.currentData()
+        profile_id = self.state.current_profile_id
+        if not profile_id:
+            QMessageBox.information(self, "Import", "Select a profile first.")
+            return
         file_path = Path(self.file_input.text())
         if not file_path.exists():
             QMessageBox.information(self, "Import", "Selected file no longer exists.")
@@ -366,7 +365,6 @@ class ImportPage(QWidget):
 
         self.import_button.setEnabled(False)
         self.browse_button.setEnabled(False)
-        self.profile_combo.setEnabled(False)
         self.mode_combo.setEnabled(False)
         self.advanced_toggle.setEnabled(False)
         self.import_button.setText("Importing...")
@@ -650,7 +648,6 @@ class ImportPage(QWidget):
         self.import_button.setEnabled(True)
         self.import_button.setText("Import")
         self.browse_button.setEnabled(True)
-        self.profile_combo.setEnabled(True)
         self.mode_combo.setEnabled(True)
         self.advanced_toggle.setEnabled(True)
         self._update_import_button_state()
