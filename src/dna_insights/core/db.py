@@ -394,6 +394,11 @@ class Database:
         if commit:
             self.conn.commit()
 
+    def clear_clinvar_checked(self, *, commit: bool = True) -> None:
+        self.conn.execute("DELETE FROM clinvar_checked")
+        if commit:
+            self.conn.commit()
+
     def get_all_rsids(self) -> set[str]:
         cur = self.conn.execute(
             """

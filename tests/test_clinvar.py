@@ -69,6 +69,28 @@ def test_clinvar_cache_import(tmp_path: Path) -> None:
     assert summary["variant_count"] == 3
 
 
+def test_clinvar_cache_import_new_rsids(tmp_path: Path) -> None:
+    cache_path = tmp_path / "clinvar_cache.sqlite3"
+    sample_path = Path("tests/fixtures/variant_summary_sample.txt")
+    build_clinvar_cache(input_path=sample_path, output_path=cache_path)
+
+    db_path = tmp_path / "cache_increment.sqlite3"
+    summary1 = import_clinvar_cache(
+        cache_path=cache_path,
+        db_path=db_path,
+        rsid_filter={"rs123"},
+    )
+    assert summary1["variant_count"] == 1
+
+    summary2 = import_clinvar_cache(
+        cache_path=cache_path,
+        db_path=db_path,
+        rsid_filter={"rs456"},
+    )
+    assert summary2.get("skipped") is not True
+    assert summary2["variant_count"] == 1
+
+
 def test_clinvar_classification() -> None:
     flags = classify_clinvar("Conflicting interpretations of pathogenicity", "criteria provided, single submitter")
     assert flags["conflict"] is True

@@ -583,76 +583,179 @@ def import_clinvar_cache(
         raise FileNotFoundError(f"ClinVar cache not found at {cache_path}")
 
     db = Database(db_path)
-    cache_conn = sqlite3.connect(cache_path, timeout=30)
-    cache_conn.row_factory = sqlite3.Row
+    conn = db.conn
+    attached = False
+    progress_handler_set = False
     try:
+        conn.execute("ATTACH DATABASE ? AS clinvar_cache", (str(cache_path),))
+        attached = True
+
+        file_hash = None
+        try:
+            row = conn.execute(
+                "SELECT value FROM clinvar_cache.clinvar_cache_meta WHERE key = ?",
+                ("file_hash_sha256",),
+            ).fetchone()
+            if row:
+                file_hash = row[0]
+        except sqlite3.Error:
+            file_hash = None
+        if not file_hash:
+            file_hash = sha256_file(cache_path)
+
+        latest = db.get_latest_clinvar_import()
+        if latest and latest.get("file_hash_sha256") != file_hash:
+            replace = True
+            if rsid_filter is not None:
+                rsid_filter = db.get_all_rsids()
+
         if not rsid_filter:
             return {"skipped": True, "reason": "no_rsids"}
 
-        file_hash = sha256_file(cache_path)
-        latest = db.get_latest_clinvar_import()
-        if latest and latest.get("file_hash_sha256") == file_hash:
-            return {"skipped": True, "reason": "already_imported", **latest}
-
         rsids = list(rsid_filter)
         total = len(rsids)
-        processed = 0
-        matched = 0
-        rows_batch: list[tuple] = []
-        start_time = time.monotonic()
-        last_emit = 0
+        if total == 0:
+            return {"skipped": True, "reason": "no_rsids"}
 
-        def maybe_emit() -> None:
-            if not on_progress_detail or total <= 0:
-                return
-            nonlocal last_emit
-            if processed - last_emit < 1000 and processed < total:
-                return
-            last_emit = processed
-            elapsed = max(time.monotonic() - start_time, 0.001)
-            rate = processed / elapsed
-            percent = min(int((processed / total) * 100), 100)
-            remaining = max(total - processed, 0)
-            eta_seconds = remaining / rate if rate > 0 else 0.0
-            on_progress_detail(percent, processed, eta_seconds)
+        def emit_detail(percent: int, processed: int, eta_seconds: float) -> None:
+            if on_progress_detail:
+                on_progress_detail(percent, processed, eta_seconds)
+
+        def emit_progress(count: int) -> None:
+            if on_progress:
+                on_progress(count)
+
+        def progress_handler() -> int:
+            if cancel_check and cancel_check():
+                return 1
+            return 0
 
         try:
+            if cancel_check:
+                conn.set_progress_handler(progress_handler, 10000)
+                progress_handler_set = True
+
             db.begin()
             if replace:
                 db.clear_clinvar_variants(commit=False)
+                db.clear_clinvar_checked(commit=False)
 
-            chunk_size = 900
+            conn.execute("DROP TABLE IF EXISTS temp.rsid_input")
+            conn.execute("DROP TABLE IF EXISTS temp.missing_rsids")
+            conn.execute("CREATE TEMP TABLE rsid_input (rsid TEXT PRIMARY KEY)")
+
+            inserted = 0
+            insert_start = time.monotonic()
+            chunk_size = 10000
             for i in range(0, total, chunk_size):
                 if cancel_check and cancel_check():
                     raise ImportCancelled("ClinVar cache import cancelled.")
                 chunk = rsids[i : i + chunk_size]
-                placeholders = ",".join("?" for _ in chunk)
-                query = (
-                    "SELECT rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated "
-                    f"FROM clinvar_variants WHERE rsid IN ({placeholders})"
-                )
-                rows = cache_conn.execute(query, chunk).fetchall()
-                matched += len(rows)
-                for row in rows:
-                    rows_batch.append(tuple(row))
-                if len(rows_batch) >= BATCH_SIZE:
-                    if cancel_check and cancel_check():
-                        raise ImportCancelled("ClinVar cache import cancelled.")
-                    db.upsert_clinvar_variants(rows_batch)
-                    rows_batch.clear()
-                processed += len(chunk)
-                if on_progress and matched % 5000 == 0:
-                    on_progress(matched)
-                maybe_emit()
+                rows = [(rsid,) for rsid in chunk]
+                conn.executemany("INSERT OR IGNORE INTO rsid_input (rsid) VALUES (?)", rows)
+                inserted += len(chunk)
+                if total > 0:
+                    elapsed = max(time.monotonic() - insert_start, 0.001)
+                    rate = inserted / elapsed
+                    remaining = max(total - inserted, 0)
+                    eta_seconds = remaining / rate if rate > 0 else 0.0
+                    percent = min(int((inserted / total) * 15), 15)
+                    emit_detail(percent, inserted, eta_seconds)
 
-            if rows_batch:
+            if cancel_check and cancel_check():
+                raise ImportCancelled("ClinVar cache import cancelled.")
+
+            conn.execute(
+                """
+                CREATE TEMP TABLE missing_rsids AS
+                SELECT r.rsid
+                FROM rsid_input r
+                LEFT JOIN clinvar_checked c ON c.rsid = r.rsid
+                WHERE c.rsid IS NULL
+                """
+            )
+
+            row = conn.execute(
+                "SELECT COUNT(*) AS total, MIN(rowid) AS min_id, MAX(rowid) AS max_id FROM missing_rsids"
+            ).fetchone()
+            total_missing = int(row["total"]) if row else 0
+            min_rowid = row["min_id"] if row else None
+            max_rowid = row["max_id"] if row else None
+
+            if total_missing == 0 or min_rowid is None or max_rowid is None:
+                db.rollback()
+                return {"skipped": True, "reason": "already_checked"}
+
+            emit_detail(20, 0, 0.0)
+
+            matched_total = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM missing_rsids m
+                    JOIN clinvar_cache.clinvar_variants c ON c.rsid = m.rsid
+                    """
+                ).fetchone()[0]
+            )
+
+            processed_missing = 0
+            import_start = time.monotonic()
+            step_size = 50000
+            for start_id in range(int(min_rowid), int(max_rowid) + 1, step_size):
                 if cancel_check and cancel_check():
                     raise ImportCancelled("ClinVar cache import cancelled.")
-                db.upsert_clinvar_variants(rows_batch)
+                end_id = min(start_id + step_size - 1, int(max_rowid))
+                chunk_total = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM missing_rsids WHERE rowid BETWEEN ? AND ?",
+                        (start_id, end_id),
+                    ).fetchone()[0]
+                )
+                if chunk_total == 0:
+                    continue
 
-            db.mark_clinvar_checked(rsid_filter, commit=False)
-            db.add_clinvar_import(file_hash, matched, commit=False)
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO clinvar_variants
+                        (rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated)
+                    SELECT c.rsid, c.chrom, c.pos, c.ref, c.alt, c.clinical_significance, c.review_status,
+                           c.conditions, c.last_evaluated
+                    FROM missing_rsids m
+                    JOIN clinvar_cache.clinvar_variants c ON c.rsid = m.rsid
+                    WHERE m.rowid BETWEEN ? AND ?
+                    """,
+                    (start_id, end_id),
+                )
+
+                processed_missing += chunk_total
+                elapsed = max(time.monotonic() - import_start, 0.001)
+                rate = processed_missing / elapsed
+                remaining = max(total_missing - processed_missing, 0)
+                eta_seconds = remaining / rate if rate > 0 else 0.0
+                percent = 20 + int((processed_missing / total_missing) * 75)
+                emit_detail(min(percent, 95), processed_missing, eta_seconds)
+
+                if matched_total > 0:
+                    estimate = int(matched_total * (processed_missing / total_missing))
+                    emit_progress(min(estimate, matched_total))
+                else:
+                    emit_progress(processed_missing)
+
+            conn.execute("INSERT OR IGNORE INTO clinvar_checked (rsid) SELECT rsid FROM missing_rsids")
+            db.add_clinvar_import(file_hash, matched_total, commit=False)
             db.commit()
+        except sqlite3.OperationalError as exc:
+            if cancel_check and cancel_check() and "interrupted" in str(exc).lower():
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                raise ImportCancelled("ClinVar cache import cancelled.") from exc
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
         except ImportCancelled:
             try:
                 db.rollback()
@@ -665,10 +768,19 @@ def import_clinvar_cache(
             except Exception:
                 pass
             raise
+        finally:
+            if progress_handler_set:
+                conn.set_progress_handler(None, 0)
 
-        return {"file_hash_sha256": file_hash, "variant_count": matched}
+        emit_detail(100, total_missing, 0.0)
+        emit_progress(matched_total)
+        return {"file_hash_sha256": file_hash, "variant_count": matched_total}
     finally:
-        cache_conn.close()
+        if attached:
+            try:
+                conn.execute("DETACH DATABASE clinvar_cache")
+            except Exception:
+                pass
         db.close()
 
 
@@ -684,13 +796,16 @@ def import_clinvar_snapshot(
 ) -> dict:
     db = Database(db_path)
     try:
-        if rsid_filter is not None and not rsid_filter:
-            return {"skipped": True, "reason": "no_rsids"}
-
         file_hash = sha256_file(file_path)
         latest = db.get_latest_clinvar_import()
-        if latest and latest.get("file_hash_sha256") == file_hash:
+        if latest and latest.get("file_hash_sha256") != file_hash:
+            replace = True
+            if rsid_filter is not None:
+                rsid_filter = db.get_all_rsids()
+        if latest and latest.get("file_hash_sha256") == file_hash and rsid_filter is None:
             return {"skipped": True, "reason": "already_imported", **latest}
+        if rsid_filter is not None and not rsid_filter:
+            return {"skipped": True, "reason": "no_rsids"}
 
         processed = 0
         unique_rsids: set[str] = set()
@@ -701,6 +816,7 @@ def import_clinvar_snapshot(
             db.begin()
             if replace:
                 db.clear_clinvar_variants(commit=False)
+                db.clear_clinvar_checked(commit=False)
 
             if _is_variant_summary(file_path):
                 for row in _iter_variant_summary(
