@@ -385,6 +385,25 @@ def cache_path(data_dir: Path) -> Path:
     return data_dir / "clinvar" / CLINVAR_CACHE_FILENAME
 
 
+def cache_metadata(cache_path: Path) -> dict | None:
+    if not cache_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(cache_path, timeout=5)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT key, value FROM clinvar_cache_meta").fetchall()
+        if not rows:
+            return None
+        return {row["key"]: row["value"] for row in rows}
+    except sqlite3.Error:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def auto_import_source(data_dir: Path) -> dict | None:
     cache = cache_path(data_dir)
     if cache.exists():

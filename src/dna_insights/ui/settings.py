@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
-from dna_insights.core.clinvar import auto_import_source, import_clinvar_snapshot, seed_metadata
+from dna_insights.core.clinvar import auto_import_source, cache_metadata, cache_path, import_clinvar_snapshot, seed_metadata
 from dna_insights.core.settings import resolve_data_dir, save_settings
 
 
@@ -66,6 +66,7 @@ class SettingsPage(QWidget):
         self.import_clinvar_button = QPushButton("Import ClinVar snapshot (VCF/VCF.GZ)")
         self.auto_import_label = QLabel("")
         self.clinvar_status_label = QLabel("")
+        self.clinvar_source_label = QLabel("")
 
         self.kb_label = QLabel(f"Knowledge base version: {self.state.manifest.kb_version}")
         self.banner = QLabel("Educational only. Not medical advice. Confirm health-related findings clinically.")
@@ -89,6 +90,7 @@ class SettingsPage(QWidget):
         card_layout.addWidget(self.import_clinvar_button)
         card_layout.addWidget(self.auto_import_label)
         card_layout.addWidget(self.clinvar_status_label)
+        card_layout.addWidget(self.clinvar_source_label)
         card_layout.addWidget(self.kb_label)
 
         layout = QVBoxLayout()
@@ -110,6 +112,7 @@ class SettingsPage(QWidget):
         self.refresh()
         self._refresh_clinvar_status()
         self._refresh_auto_import_hint()
+        self._refresh_clinvar_source()
 
     def refresh(self) -> None:
         data_dir = resolve_data_dir(self.state.settings)
@@ -209,6 +212,32 @@ class SettingsPage(QWidget):
             f"ClinVar snapshot imported {meta.get('imported_at', '')} "
             f"({meta.get('variant_count', 0)} variants)."
         )
+        self._refresh_clinvar_source()
+
+    def _refresh_clinvar_source(self) -> None:
+        meta = self.state.db.get_latest_clinvar_import()
+        if not meta:
+            self.clinvar_source_label.setText("ClinVar source: not imported yet.")
+            return
+        latest_hash = meta.get("file_hash_sha256", "")
+        seed_meta = seed_metadata()
+        source = "Snapshot"
+        if latest_hash and latest_hash == seed_meta.get("file_hash_sha256"):
+            source = "Bundled seed"
+        else:
+            data_dir = resolve_data_dir(self.state.settings)
+            cache_meta = cache_metadata(cache_path(data_dir))
+            if cache_meta and cache_meta.get("file_hash_sha256") == latest_hash:
+                source = "Cache"
+
+        imported_at = meta.get("imported_at", "")
+        hash_short = latest_hash[:10] if latest_hash else ""
+        parts = [f"ClinVar source: {source}"]
+        if imported_at:
+            parts.append(f"Imported: {imported_at}")
+        if hash_short:
+            parts.append(f"Hash: {hash_short}…")
+        self.clinvar_source_label.setText(" · ".join(parts))
 
     def _refresh_auto_import_hint(self) -> None:
         data_dir = resolve_data_dir(self.state.settings)
