@@ -99,6 +99,7 @@ class ImportPage(QWidget):
         self._import_progress: QProgressDialog | None = None
         self._import_cancel_button: QPushButton | None = None
         self._import_status: dict[str, object] | None = None
+        self._import_done = False
         self._clinvar_thread: QThread | None = None
         self._clinvar_worker: ClinVarAutoWorker | None = None
         self._clinvar_progress: QProgressDialog | None = None
@@ -226,6 +227,7 @@ class ImportPage(QWidget):
         progress.show()
         self._import_progress = progress
         self._import_cancel_button = cancel_button
+        self._import_done = False
 
         self.import_button.setEnabled(False)
         self.browse_button.setEnabled(False)
@@ -324,9 +326,14 @@ class ImportPage(QWidget):
         self._import_progress.setValue(int(status["visual_percent"]))
 
     def _finalize_import_progress(self) -> None:
+        self._close_import_progress()
+
+    def _close_import_progress(self) -> None:
         progress = self._import_progress
         self._import_progress = None
         self._import_cancel_button = None
+        self._import_status = None
+        self._import_done = False
         if progress:
             progress.blockSignals(True)
             progress.hide()
@@ -335,8 +342,11 @@ class ImportPage(QWidget):
     @Slot(object)
     def _finish_import(self, summary) -> None:
         if self._import_status:
+            self._import_status["stage"] = "Import finished."
             self._import_status["visual_percent"] = 100
-        self._finalize_import_progress()
+            self._import_status["eta"] = 0.0
+        self._update_import_label()
+        self._mark_import_done()
         self.summary_label.setText(
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
         )
@@ -357,6 +367,8 @@ class ImportPage(QWidget):
 
     def _cancel_import(self) -> None:
         if not self._import_worker or not self._import_thread or not self._import_thread.isRunning():
+            if self._import_done:
+                self._close_import_progress()
             return
         self._import_worker.request_cancel()
         if self._import_status:
@@ -503,9 +515,15 @@ class ImportPage(QWidget):
     def _cleanup_import_refs(self) -> None:
         self._import_thread = None
         self._import_worker = None
-        self._import_progress = None
-        self._import_cancel_button = None
-        self._import_status = None
+
+    def _mark_import_done(self) -> None:
+        self._import_done = True
+        if self._import_cancel_button:
+            self._import_cancel_button.setEnabled(True)
+            self._import_cancel_button.setText("Close")
+        if self._import_progress:
+            self._import_progress.setLabelText("Import finished. Click Close to dismiss.")
+            self._import_progress.setValue(100)
 
     def _cleanup_clinvar_refs(self) -> None:
         self._clinvar_thread = None
