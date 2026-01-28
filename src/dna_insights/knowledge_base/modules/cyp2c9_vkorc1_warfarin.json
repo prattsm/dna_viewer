@@ -1,0 +1,49 @@
+{
+  "module_id": "cyp2c9_vkorc1_warfarin",
+  "category": "pgx",
+  "display_name": "Warfarin sensitivity markers (CYP2C9/VKORC1)",
+  "rsids": ["rs1799853", "rs1057910", "rs9923231"],
+  "rules": [
+    {
+      "rsid": "rs1799853",
+      "genotypes": ["TT", "CT"],
+      "summary": "The T allele at rs1799853 (CYP2C9*2) is associated with reduced CYP2C9 enzyme activity in clinical guidelines."
+    },
+    {
+      "rsid": "rs1799853",
+      "genotypes": ["CC"],
+      "summary": "CC at rs1799853 is not associated with the reduced-function CYP2C9*2 allele."
+    },
+    {
+      "rsid": "rs1057910",
+      "genotypes": ["AA", "AC"],
+      "summary": "The A allele at rs1057910 (CYP2C9*3) is associated with reduced CYP2C9 enzyme activity in clinical guidelines."
+    },
+    {
+      "rsid": "rs1057910",
+      "genotypes": ["CC"],
+      "summary": "CC at rs1057910 is not associated with the reduced-function CYP2C9*3 allele."
+    },
+    {
+      "rsid": "rs9923231",
+      "genotypes": ["TT", "CT"],
+      "summary": "The T allele at rs9923231 in VKORC1 is associated with increased warfarin sensitivity in clinical guidelines."
+    },
+    {
+      "rsid": "rs9923231",
+      "genotypes": ["CC"],
+      "summary": "CC at rs9923231 is not associated with the increased sensitivity reported for the T allele."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for CYP2C9/VKORC1 markers.",
+  "suggestion": "If you take warfarin, discuss pharmacogenomic testing with a clinician. Do not change medications based on this app.",
+  "evidence_level": {
+    "grade": "A",
+    "summary": "CPIC guidelines exist for CYP2C9/VKORC1 and warfarin."
+  },
+  "limitations": "Full warfarin guidance requires clinical-grade genotyping and clinical factors. This is not dosing advice.",
+  "references": [
+    "CPIC guidelines for CYP2C9/VKORC1 and warfarin (PharmGKB/CPIC)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

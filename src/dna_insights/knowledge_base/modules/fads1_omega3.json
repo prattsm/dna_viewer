@@ -1,0 +1,24 @@
+{
+  "module_id": "fads1_omega3",
+  "category": "nutrition",
+  "display_name": "Omega-3 conversion (FADS1 rs174547)",
+  "rsids": ["rs174547"],
+  "rules": [
+    {
+      "rsid": "rs174547",
+      "genotypes": ["CC", "CT", "TT"],
+      "summary": "rs174547 in FADS1 has been associated with differences in omega-3 and omega-6 fatty acid levels in population studies."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs174547.",
+  "suggestion": "Dietary omega-3 intake (e.g., fish or algae sources) is a direct way to influence levels. This is not medical advice.",
+  "evidence_level": {
+    "grade": "C",
+    "summary": "Associations exist but effects are modest and context-dependent."
+  },
+  "limitations": "This does not measure actual omega-3 status. Diet is the dominant factor.",
+  "references": [
+    "FADS1 rs174547 association studies (PubMed)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

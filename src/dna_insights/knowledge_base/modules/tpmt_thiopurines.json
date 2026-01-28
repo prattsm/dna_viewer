@@ -1,0 +1,24 @@
+{
+  "module_id": "tpmt_thiopurines",
+  "category": "pgx",
+  "display_name": "Thiopurine metabolism marker (TPMT rs1142345)",
+  "rsids": ["rs1142345"],
+  "rules": [
+    {
+      "rsid": "rs1142345",
+      "genotypes": ["AA", "AG", "GG"],
+      "summary": "rs1142345 in TPMT is one of the variants used in clinical pharmacogenomic assessment of thiopurine metabolism."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs1142345.",
+  "suggestion": "If you take thiopurines (e.g., azathioprine, mercaptopurine), discuss pharmacogenomic testing with a clinician. Do not change medications based on this app.",
+  "evidence_level": {
+    "grade": "A",
+    "summary": "CPIC guidelines exist for TPMT and thiopurines."
+  },
+  "limitations": "Single-SNP results are not sufficient for clinical decisions. This is not a clinical test or dosing advice.",
+  "references": [
+    "CPIC guidelines for TPMT and thiopurines (PharmGKB/CPIC)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "module_id": "dpyd_fluoropyrimidines",
+  "category": "pgx",
+  "display_name": "Fluoropyrimidine toxicity markers (DPYD)",
+  "rsids": ["rs3918290", "rs55886062", "rs67376798", "rs75017182"],
+  "rules": [
+    {
+      "rsid": "rs3918290",
+      "genotypes": ["AA", "AG", "GG"],
+      "summary": "DPYD variants are used clinically to assess risk of fluoropyrimidine toxicity. This marker is one of several variants used in guidelines."
+    },
+    {
+      "rsid": "rs55886062",
+      "genotypes": ["AA", "AG", "GG"],
+      "summary": "DPYD variants are used clinically to assess risk of fluoropyrimidine toxicity. This marker is one of several variants used in guidelines."
+    },
+    {
+      "rsid": "rs67376798",
+      "genotypes": ["AA", "AG", "GG"],
+      "summary": "DPYD variants are used clinically to assess risk of fluoropyrimidine toxicity. This marker is one of several variants used in guidelines."
+    },
+    {
+      "rsid": "rs75017182",
+      "genotypes": ["AA", "AG", "GG"],
+      "summary": "DPYD variants are used clinically to assess risk of fluoropyrimidine toxicity. This marker is one of several variants used in guidelines."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for DPYD markers.",
+  "suggestion": "If you receive fluoropyrimidines (e.g., 5‑FU/capecitabine), discuss pharmacogenomic testing with a clinician. Do not change medications based on this app.",
+  "evidence_level": {
+    "grade": "A",
+    "summary": "CPIC guidelines exist for DPYD and fluoropyrimidines."
+  },
+  "limitations": "Many DPYD variants are rare and not captured by SNP chips. This is not a clinical test or dosing advice.",
+  "references": [
+    "CPIC guidelines for DPYD and fluoropyrimidines (PharmGKB/CPIC)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

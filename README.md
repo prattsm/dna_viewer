@@ -60,11 +60,10 @@ pytest
 - Environment variable `DNA_INSIGHTS_DATA_DIR` overrides the data directory for the current run.
 
 ## Knowledge base
-The curated knowledge base ships with a small, conservative set of modules:
-- Lactose persistence (LCT rs4988235)
-- Caffeine metabolism (CYP1A2 rs762551)
-- Alcohol flush (ALDH2 rs671)
-- FTO trait association (rs9939609)
+The curated knowledge base ships with a conservative but expanded set of modules across categories:
+- Nutrition (lactose persistence, caffeine metabolism, alcohol metabolism, folate, vitamin D, omega-3, beta-carotene, B12)
+- Wellness/traits (FTO association)
+- Pharmacogenomics (opt-in): CYP2C19, SLCO1B1, CYP2C9/VKORC1, TPMT, DPYD
 
 Each module includes evidence grading, limitations, and references that appear in reports.
 

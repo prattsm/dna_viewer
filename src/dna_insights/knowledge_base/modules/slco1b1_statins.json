@@ -1,0 +1,29 @@
+{
+  "module_id": "slco1b1_statins",
+  "category": "pgx",
+  "display_name": "Statin myopathy marker (SLCO1B1 rs4149056)",
+  "rsids": ["rs4149056"],
+  "rules": [
+    {
+      "rsid": "rs4149056",
+      "genotypes": ["CC", "CT"],
+      "summary": "The C allele at rs4149056 is associated with reduced SLCO1B1 transport function and higher risk of statin-associated muscle symptoms in clinical guidelines."
+    },
+    {
+      "rsid": "rs4149056",
+      "genotypes": ["TT"],
+      "summary": "TT is not associated with the reduced SLCO1B1 function seen with the C allele."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs4149056.",
+  "suggestion": "If you take statins, discuss possible muscle-related side effects with a clinician. Do not change medications based on this app.",
+  "evidence_level": {
+    "grade": "A",
+    "summary": "CPIC guidelines exist for SLCO1B1 and statin therapy."
+  },
+  "limitations": "Medication response depends on many factors. This is not a clinical test or dosing advice.",
+  "references": [
+    "CPIC guidelines for SLCO1B1 and statins (PharmGKB/CPIC)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

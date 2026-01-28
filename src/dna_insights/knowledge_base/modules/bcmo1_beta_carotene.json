@@ -1,0 +1,39 @@
+{
+  "module_id": "bcmo1_beta_carotene",
+  "category": "nutrition",
+  "display_name": "Beta-carotene conversion (BCMO1 rs12934922/rs7501331)",
+  "rsids": ["rs12934922", "rs7501331"],
+  "rules": [
+    {
+      "rsid": "rs12934922",
+      "genotypes": ["TT", "CT"],
+      "summary": "The T allele at rs12934922 has been associated with reduced conversion of beta-carotene to vitamin A in some studies."
+    },
+    {
+      "rsid": "rs12934922",
+      "genotypes": ["CC"],
+      "summary": "CC at rs12934922 is not associated with the reduced conversion reported for the T allele."
+    },
+    {
+      "rsid": "rs7501331",
+      "genotypes": ["TT", "CT"],
+      "summary": "The T allele at rs7501331 has been associated with reduced beta-carotene conversion efficiency in some studies."
+    },
+    {
+      "rsid": "rs7501331",
+      "genotypes": ["CC"],
+      "summary": "CC at rs7501331 is not associated with the reduced conversion reported for the T allele."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for BCMO1 markers.",
+  "suggestion": "Vitamin A status depends on diet; consider discussing nutrition choices with a clinician or dietitian. This is not medical advice.",
+  "evidence_level": {
+    "grade": "C",
+    "summary": "Associations exist but effects are modest and vary by study."
+  },
+  "limitations": "This is not a measure of vitamin A status and does not replace lab testing.",
+  "references": [
+    "BCMO1 variants and beta-carotene conversion studies (PubMed)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

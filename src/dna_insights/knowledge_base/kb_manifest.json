@@ -1,11 +1,22 @@
 {
-  "kb_version": "0.1.0",
+  "kb_version": "0.2.0",
   "build": "GRCh37",
   "strand": "+",
   "module_files": [
     "lactose_persistence.json",
     "caffeine_metabolism.json",
     "alcohol_flush.json",
-    "fto_trait.json"
+    "adh1b_alcohol_metabolism.json",
+    "mthfr_folate.json",
+    "vitamin_d_gc.json",
+    "fads1_omega3.json",
+    "bcmo1_beta_carotene.json",
+    "fut2_b12.json",
+    "fto_trait.json",
+    "cyp2c19_pgx.json",
+    "slco1b1_statins.json",
+    "cyp2c9_vkorc1_warfarin.json",
+    "tpmt_thiopurines.json",
+    "dpyd_fluoropyrimidines.json"
   ]
 }

@@ -1,0 +1,39 @@
+{
+  "module_id": "cyp2c19_pgx",
+  "category": "pgx",
+  "display_name": "Medication metabolism marker (CYP2C19)",
+  "rsids": ["rs4244285", "rs12248560"],
+  "rules": [
+    {
+      "rsid": "rs4244285",
+      "genotypes": ["AA", "AG"],
+      "summary": "The A allele at rs4244285 (CYP2C19*2) is associated with reduced enzyme function in clinical guidelines."
+    },
+    {
+      "rsid": "rs4244285",
+      "genotypes": ["GG"],
+      "summary": "GG at rs4244285 is not associated with the reduced-function CYP2C19*2 allele."
+    },
+    {
+      "rsid": "rs12248560",
+      "genotypes": ["TT", "CT"],
+      "summary": "The T allele at rs12248560 (CYP2C19*17) is associated with increased enzyme function in clinical guidelines."
+    },
+    {
+      "rsid": "rs12248560",
+      "genotypes": ["CC"],
+      "summary": "CC at rs12248560 is not associated with the increased-function CYP2C19*17 allele."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for CYP2C19 markers.",
+  "suggestion": "If you take medications affected by CYP2C19 (e.g., clopidogrel, some antidepressants or PPIs), discuss with a clinician. Do not change medications based on this app.",
+  "evidence_level": {
+    "grade": "A",
+    "summary": "CPIC guidelines exist, but full metabolizer status requires clinical-grade testing across multiple variants."
+  },
+  "limitations": "SNP-chip data do not capture all CYP2C19 variants. This is not a clinical test or prescribing guidance.",
+  "references": [
+    "CPIC guidelines for CYP2C19 (PharmGKB/CPIC)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

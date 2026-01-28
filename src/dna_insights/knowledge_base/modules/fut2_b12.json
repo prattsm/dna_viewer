@@ -1,0 +1,24 @@
+{
+  "module_id": "fut2_b12",
+  "category": "nutrition",
+  "display_name": "Vitamin B12 levels (FUT2 rs601338)",
+  "rsids": ["rs601338"],
+  "rules": [
+    {
+      "rsid": "rs601338",
+      "genotypes": ["AA", "AG", "GG"],
+      "summary": "rs601338 in FUT2 has been associated with differences in circulating vitamin B12 levels in population studies."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs601338.",
+  "suggestion": "B12 status depends on diet and absorption. Consider discussing testing with a clinician if you have concerns. This is not medical advice.",
+  "evidence_level": {
+    "grade": "C",
+    "summary": "Associations exist but effects are modest and influenced by diet and health context."
+  },
+  "limitations": "This does not measure vitamin B12 status. Diet, medications, and gut health are major factors.",
+  "references": [
+    "FUT2 rs601338 and vitamin B12 GWAS studies (PubMed)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

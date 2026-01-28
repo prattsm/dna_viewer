@@ -1,0 +1,29 @@
+{
+  "module_id": "adh1b_alcohol_metabolism",
+  "category": "nutrition",
+  "display_name": "Alcohol metabolism (ADH1B rs1229984)",
+  "rsids": ["rs1229984"],
+  "rules": [
+    {
+      "rsid": "rs1229984",
+      "genotypes": ["AA", "AG"],
+      "summary": "The A allele is associated with faster conversion of alcohol to acetaldehyde, which can increase flushing or discomfort and is linked to lower risk of heavy drinking in some studies."
+    },
+    {
+      "rsid": "rs1229984",
+      "genotypes": ["GG"],
+      "summary": "GG is the typical genotype and is not associated with the faster ADH1B activity seen with the A allele."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs1229984.",
+  "suggestion": "If alcohol causes discomfort, consider moderating intake. This is not medical advice.",
+  "evidence_level": {
+    "grade": "B",
+    "summary": "Common variant with consistent associations across populations, but effect sizes are modest."
+  },
+  "limitations": "Associations are population-dependent and do not diagnose alcohol-related conditions or risks.",
+  "references": [
+    "ADH1B rs1229984 association studies (PubMed)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

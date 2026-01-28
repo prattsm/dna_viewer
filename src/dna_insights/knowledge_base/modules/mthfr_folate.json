@@ -1,0 +1,39 @@
+{
+  "module_id": "mthfr_folate",
+  "category": "nutrition",
+  "display_name": "Folate metabolism (MTHFR rs1801133/rs1801131)",
+  "rsids": ["rs1801133", "rs1801131"],
+  "rules": [
+    {
+      "rsid": "rs1801133",
+      "genotypes": ["TT", "CT"],
+      "summary": "The T allele at rs1801133 (C677T) is associated with reduced MTHFR enzyme activity and, in some studies, higher homocysteine and lower folate status."
+    },
+    {
+      "rsid": "rs1801133",
+      "genotypes": ["CC"],
+      "summary": "CC at rs1801133 is the typical genotype and is not associated with the reduced MTHFR activity seen with the T allele."
+    },
+    {
+      "rsid": "rs1801131",
+      "genotypes": ["CC", "AC"],
+      "summary": "The C allele at rs1801131 (A1298C) has been associated with modestly reduced MTHFR activity in some studies."
+    },
+    {
+      "rsid": "rs1801131",
+      "genotypes": ["AA"],
+      "summary": "AA at rs1801131 is the typical genotype and is not associated with the modest activity reduction reported for the C allele."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for MTHFR markers.",
+  "suggestion": "If you are concerned about folate status, discuss diet or testing with a clinician. This is not medical advice.",
+  "evidence_level": {
+    "grade": "C",
+    "summary": "Associations exist but effects are modest and interpretations are controversial."
+  },
+  "limitations": "MTHFR variants do not diagnose folate deficiency or health conditions. Diet, medications, and other genes matter.",
+  "references": [
+    "MTHFR C677T and folate/homocysteine meta-analyses (PubMed)",
+    "AncestryDNA raw data format documentation"
+  ]
+}

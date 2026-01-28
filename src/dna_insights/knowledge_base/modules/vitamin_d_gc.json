@@ -1,0 +1,29 @@
+{
+  "module_id": "vitamin_d_gc",
+  "category": "nutrition",
+  "display_name": "Vitamin D status (GC rs2282679)",
+  "rsids": ["rs2282679"],
+  "rules": [
+    {
+      "rsid": "rs2282679",
+      "genotypes": ["CC", "AC"],
+      "summary": "The C allele has been associated with slightly lower circulating vitamin D levels in multiple studies."
+    },
+    {
+      "rsid": "rs2282679",
+      "genotypes": ["AA"],
+      "summary": "AA is not associated with the lower vitamin D levels reported for the C allele in some studies."
+    }
+  ],
+  "default_summary": "No call or unrecognized genotype for rs2282679.",
+  "suggestion": "Vitamin D status depends on sun exposure, diet, and supplementation. Consider checking levels with a clinician. This is not medical advice.",
+  "evidence_level": {
+    "grade": "B",
+    "summary": "Common GWAS association with modest effect size."
+  },
+  "limitations": "Genetics explain only a small portion of vitamin D variation. Lifestyle and geography are major factors.",
+  "references": [
+    "GC (vitamin D binding protein) rs2282679 association studies (PubMed)",
+    "AncestryDNA raw data format documentation"
+  ]
+}
