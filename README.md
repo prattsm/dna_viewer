@@ -75,6 +75,8 @@ Each module includes evidence grading, limitations, and references that appear i
   - `dna-insights-build-clinvar-cache --input /path/to/variant_summary.txt`
   - Or: `python3 -m dna_insights.tools.build_clinvar_cache --input /path/to/variant_summary.txt`
   - Cache location (default): `<data_dir>/clinvar/clinvar_cache.sqlite3`
+  - If the `dna-insights-build-clinvar-cache` command is not found after pulling new changes, run:
+    - `pip install -e ".[dev]"`
 - If you are packaging a distribution and want the full file to ship with the app, place it at:
   - `src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz` (or `.txt`)
   - This path is git-ignored to keep large files out of the repo.

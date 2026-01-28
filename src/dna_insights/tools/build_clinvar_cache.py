@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
 
     output_path = Path(args.output).expanduser().resolve() if args.output else _default_output_path()
 
-    last_emit = 0
+    last_emit = -1
     start_time = time.monotonic()
 
     def on_progress_detail(percent: int, _bytes_read: int, eta_seconds: float) -> None:
@@ -37,13 +37,15 @@ def main(argv: list[str] | None = None) -> int:
             return
         last_emit = percent
         elapsed = max(time.monotonic() - start_time, 0.001)
-        rate = percent / elapsed if elapsed > 0 else 0.0
         eta_display = ""
         if eta_seconds > 0:
             minutes, seconds = divmod(int(eta_seconds), 60)
             hours, minutes = divmod(minutes, 60)
             eta_display = f" ETA {hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f" ETA {minutes:02d}:{seconds:02d}"
-        print(f"[{percent:3d}%] building cache...{eta_display}")
+        bar_width = 30
+        filled = int((percent / 100) * bar_width)
+        bar = "#" * filled + "-" * (bar_width - filled)
+        print(f"\r[{bar}] {percent:3d}% building cache...{eta_display}", end="", flush=True)
 
     summary = build_clinvar_cache(
         input_path=input_path,
@@ -51,11 +53,10 @@ def main(argv: list[str] | None = None) -> int:
         on_progress_detail=on_progress_detail,
     )
 
-    print(
-        f"Cache built at {output_path}\n"
-        f"Variants stored: {summary.get('variant_count')}\n"
-        f"Source hash: {summary.get('file_hash_sha256')}"
-    )
+    print()
+    print(f"Cache built at {output_path}")
+    print(f"Variants stored: {summary.get('variant_count')}")
+    print(f"Source hash: {summary.get('file_hash_sha256')}")
     return 0
 
 
