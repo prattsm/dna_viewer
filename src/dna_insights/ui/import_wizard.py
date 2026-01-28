@@ -265,6 +265,7 @@ class ImportPage(QWidget):
         worker.stage.connect(self._on_import_stage, Qt.ConnectionType.QueuedConnection)
         worker.detail.connect(self._on_import_detail, Qt.ConnectionType.QueuedConnection)
         progress.canceled.connect(self._cancel_import)
+        cancel_button.clicked.connect(self._cancel_import)
         thread.start()
 
     @Slot(int)
@@ -445,6 +446,7 @@ class ImportPage(QWidget):
             lambda message: self._fail_clinvar(message, progress), Qt.ConnectionType.QueuedConnection
         )
         progress.canceled.connect(self._cancel_clinvar_request)
+        cancel_button.clicked.connect(self._cancel_clinvar_request)
         thread.start()
 
         update_label()
