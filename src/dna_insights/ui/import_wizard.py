@@ -378,6 +378,10 @@ class ImportPage(QWidget):
         rsid_filter = self.state.db.get_all_rsids()
         if not rsid_filter:
             return
+        checked = self.state.db.get_clinvar_checked_rsids()
+        missing = rsid_filter - checked
+        if not missing:
+            return
         clinvar_path = source["path"]
         clinvar_kind = source["kind"]
 
@@ -428,7 +432,9 @@ class ImportPage(QWidget):
             update_label()
 
         self._clinvar_thread = QThread(self)
-        self._clinvar_worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter, clinvar_kind)
+        self._clinvar_worker = ClinVarAutoWorker(
+            self.state.db_path, clinvar_path, missing, clinvar_kind, False
+        )
         thread = self._clinvar_thread
         worker = self._clinvar_worker
         worker.moveToThread(thread)
@@ -514,12 +520,15 @@ class ClinVarAutoWorker(QObject):
     canceled = Signal()
     error = Signal(str)
 
-    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str], source_kind: str) -> None:
+    def __init__(
+        self, db_path: Path, file_path: Path, rsid_filter: set[str], source_kind: str, replace: bool
+    ) -> None:
         super().__init__()
         self.db_path = db_path
         self.file_path = file_path
         self.rsid_filter = rsid_filter
         self.source_kind = source_kind
+        self.replace = replace
         self._cancel_event = threading.Event()
 
     def request_cancel(self) -> None:
@@ -536,7 +545,7 @@ class ClinVarAutoWorker(QObject):
                     db_path=self.db_path,
                     on_progress=self.progress.emit,
                     on_progress_detail=self.detail.emit,
-                    replace=True,
+                    replace=self.replace,
                     rsid_filter=self.rsid_filter,
                     cancel_check=self._cancel_check,
                 )
@@ -546,7 +555,7 @@ class ClinVarAutoWorker(QObject):
                     db_path=self.db_path,
                     on_progress=self.progress.emit,
                     on_progress_detail=self.detail.emit,
-                    replace=True,
+                    replace=self.replace,
                     rsid_filter=self.rsid_filter,
                     cancel_check=self._cancel_check,
                 )

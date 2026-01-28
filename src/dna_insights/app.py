@@ -26,12 +26,15 @@ class ClinVarAutoWorker(QObject):
     finished = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str], source_kind: str) -> None:
+    def __init__(
+        self, db_path: Path, file_path: Path, rsid_filter: set[str], source_kind: str, replace: bool
+    ) -> None:
         super().__init__()
         self.db_path = db_path
         self.file_path = file_path
         self.rsid_filter = rsid_filter
         self.source_kind = source_kind
+        self.replace = replace
 
     def run(self) -> None:
         try:
@@ -39,14 +42,14 @@ class ClinVarAutoWorker(QObject):
                 summary = import_clinvar_cache(
                     cache_path=self.file_path,
                     db_path=self.db_path,
-                    replace=True,
+                    replace=self.replace,
                     rsid_filter=self.rsid_filter,
                 )
             else:
                 summary = import_clinvar_snapshot(
                     file_path=self.file_path,
                     db_path=self.db_path,
-                    replace=True,
+                    replace=self.replace,
                     rsid_filter=self.rsid_filter,
                 )
             self.finished.emit(summary)
@@ -72,10 +75,15 @@ class ClinVarAutoController(QObject):
         if not rsid_filter:
             logging.info("ClinVar auto-import skipped: no rsIDs available yet.")
             return
+        checked = self.state.db.get_clinvar_checked_rsids()
+        missing = rsid_filter - checked
+        if not missing:
+            logging.info("ClinVar auto-import skipped: no new rsIDs to process.")
+            return
         file_path = source["path"]
         source_kind = source["kind"]
         self.thread = QThread(self)
-        self.worker = ClinVarAutoWorker(self.state.db_path, file_path, rsid_filter, source_kind)
+        self.worker = ClinVarAutoWorker(self.state.db_path, file_path, missing, source_kind, False)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._on_done, Qt.QueuedConnection)
