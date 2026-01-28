@@ -22,6 +22,7 @@ dev = [
 
 [project.scripts]
 dna-insights = "dna_insights.app:main"
+dna-insights-build-clinvar-cache = "dna_insights.tools.build_clinvar_cache:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import io
+import sqlite3
 import time
 from importlib import resources
 from pathlib import Path
@@ -21,6 +22,7 @@ AUTO_IMPORT_NAMES = [
     "clinvar.vcf.gz",
     "clinvar.vcf",
 ]
+CLINVAR_CACHE_FILENAME = "clinvar_cache.sqlite3"
 BATCH_SIZE = 5000
 
 
@@ -377,6 +379,296 @@ def auto_import_path(data_dir: Path) -> Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+def cache_path(data_dir: Path) -> Path:
+    return data_dir / "clinvar" / CLINVAR_CACHE_FILENAME
+
+
+def auto_import_source(data_dir: Path) -> dict | None:
+    cache = cache_path(data_dir)
+    if cache.exists():
+        return {"kind": "cache", "path": cache}
+    packaged = packaged_clinvar_path()
+    if packaged:
+        return {"kind": "file", "path": packaged}
+    clinvar_dir = data_dir / "clinvar"
+    for name in AUTO_IMPORT_NAMES:
+        candidate = clinvar_dir / name
+        if candidate.exists():
+            return {"kind": "file", "path": candidate}
+    return None
+
+
+def build_clinvar_cache(
+    *,
+    input_path: Path,
+    output_path: Path,
+    on_progress_detail: Callable[[int, int, float], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(output_path, timeout=30)
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS clinvar_variants (
+            rsid TEXT PRIMARY KEY,
+            chrom TEXT NOT NULL,
+            pos INTEGER NOT NULL,
+            ref TEXT NOT NULL,
+            alt TEXT NOT NULL,
+            clinical_significance TEXT,
+            review_status TEXT,
+            conditions TEXT,
+            last_evaluated TEXT
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS clinvar_cache_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        """
+    )
+
+    processed = 0
+    batch: list[tuple] = []
+    total_bytes = _total_bytes(input_path)
+    start_time = time.monotonic()
+    last_emit = 0
+    bytes_read = 0
+
+    def maybe_emit_progress() -> None:
+        if not on_progress_detail or total_bytes <= 0:
+            return
+        nonlocal last_emit
+        if bytes_read - last_emit < 512 * 1024 and bytes_read < total_bytes:
+            return
+        last_emit = bytes_read
+        elapsed = max(time.monotonic() - start_time, 0.001)
+        rate = bytes_read / elapsed
+        percent = min(int((bytes_read / total_bytes) * 100), 100)
+        remaining = max(total_bytes - bytes_read, 0)
+        eta_seconds = remaining / rate if rate > 0 else 0.0
+        on_progress_detail(percent, bytes_read, eta_seconds)
+
+    try:
+        conn.execute("BEGIN")
+        if _is_variant_summary(input_path):
+            for row in _iter_variant_summary(
+                file_path=input_path,
+                rsid_filter=None,
+                on_progress_detail=on_progress_detail,
+                cancel_check=cancel_check,
+            ):
+                if cancel_check and cancel_check():
+                    raise ImportCancelled("ClinVar cache build cancelled.")
+                batch.append(row)
+                processed += 1
+                if len(batch) >= BATCH_SIZE:
+                    conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO clinvar_variants
+                            (rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        batch,
+                    )
+                    batch.clear()
+        else:
+            handle = _open_vcf(input_path)
+            try:
+                for line in handle:
+                    if cancel_check and cancel_check():
+                        raise ImportCancelled("ClinVar cache build cancelled.")
+                    lower = line.lower()
+                    if line.startswith("##"):
+                        if "grch38" in lower or "hg38" in lower:
+                            raise ValueError("ClinVar VCF appears to be GRCh38; expected GRCh37.")
+                        continue
+                    if input_path.suffix.lower() == ".gz":
+                        bytes_read = _compressed_bytes_read(handle)
+                    else:
+                        bytes_read += len(line)
+                    maybe_emit_progress()
+                    if line.startswith("#"):
+                        continue
+                    parts = line.strip().split("\t")
+                    if len(parts) < 8:
+                        continue
+                    chrom, pos, rsid, ref, alt, _qual, _filter, info = parts[:8]
+                    if not rsid.startswith("rs"):
+                        continue
+                    info_map = _parse_info(info)
+                    clnsig = info_map.get("CLNSIG", "")
+                    review = info_map.get("CLNREVSTAT", "")
+                    conditions = info_map.get("CLNDN") or info_map.get("CLNDISDB") or ""
+                    last_eval = info_map.get("CLNDATE", "")
+                    batch.append(
+                        (
+                            rsid,
+                            normalize_chrom(chrom),
+                            int(pos),
+                            ref,
+                            alt,
+                            clnsig,
+                            review,
+                            conditions,
+                            last_eval,
+                        )
+                    )
+                    processed += 1
+                    if len(batch) >= BATCH_SIZE:
+                        conn.executemany(
+                            """
+                            INSERT OR REPLACE INTO clinvar_variants
+                                (rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            batch,
+                        )
+                        batch.clear()
+            finally:
+                _close_text(handle)
+
+        if batch:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO clinvar_variants
+                    (rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                batch,
+            )
+
+        count = int(conn.execute("SELECT COUNT(*) FROM clinvar_variants").fetchone()[0])
+        file_hash = sha256_file(input_path)
+        conn.execute("DELETE FROM clinvar_cache_meta")
+        conn.executemany(
+            "INSERT INTO clinvar_cache_meta (key, value) VALUES (?, ?)",
+            [
+                ("file_hash_sha256", file_hash),
+                ("variant_count", str(count)),
+                ("source_path", str(input_path)),
+            ],
+        )
+        conn.commit()
+        return {"file_hash_sha256": file_hash, "variant_count": count, "processed": processed}
+    except ImportCancelled:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def import_clinvar_cache(
+    *,
+    cache_path: Path,
+    db_path: Path,
+    rsid_filter: set[str],
+    on_progress: Callable[[int], None] | None = None,
+    on_progress_detail: Callable[[int, int, float], None] | None = None,
+    replace: bool = True,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict:
+    if not cache_path.exists():
+        raise FileNotFoundError(f"ClinVar cache not found at {cache_path}")
+
+    db = Database(db_path)
+    cache_conn = sqlite3.connect(cache_path, timeout=30)
+    cache_conn.row_factory = sqlite3.Row
+    try:
+        if not rsid_filter:
+            return {"skipped": True, "reason": "no_rsids"}
+
+        file_hash = sha256_file(cache_path)
+        latest = db.get_latest_clinvar_import()
+        if latest and latest.get("file_hash_sha256") == file_hash:
+            return {"skipped": True, "reason": "already_imported", **latest}
+
+        rsids = list(rsid_filter)
+        total = len(rsids)
+        processed = 0
+        matched = 0
+        rows_batch: list[tuple] = []
+        start_time = time.monotonic()
+        last_emit = 0
+
+        def maybe_emit() -> None:
+            if not on_progress_detail or total <= 0:
+                return
+            nonlocal last_emit
+            if processed - last_emit < 1000 and processed < total:
+                return
+            last_emit = processed
+            elapsed = max(time.monotonic() - start_time, 0.001)
+            rate = processed / elapsed
+            percent = min(int((processed / total) * 100), 100)
+            remaining = max(total - processed, 0)
+            eta_seconds = remaining / rate if rate > 0 else 0.0
+            on_progress_detail(percent, processed, eta_seconds)
+
+        try:
+            db.begin()
+            if replace:
+                db.clear_clinvar_variants(commit=False)
+
+            chunk_size = 900
+            for i in range(0, total, chunk_size):
+                if cancel_check and cancel_check():
+                    raise ImportCancelled("ClinVar cache import cancelled.")
+                chunk = rsids[i : i + chunk_size]
+                placeholders = ",".join("?" for _ in chunk)
+                query = (
+                    "SELECT rsid, chrom, pos, ref, alt, clinical_significance, review_status, conditions, last_evaluated "
+                    f"FROM clinvar_variants WHERE rsid IN ({placeholders})"
+                )
+                rows = cache_conn.execute(query, chunk).fetchall()
+                matched += len(rows)
+                for row in rows:
+                    rows_batch.append(tuple(row))
+                if len(rows_batch) >= BATCH_SIZE:
+                    if cancel_check and cancel_check():
+                        raise ImportCancelled("ClinVar cache import cancelled.")
+                    db.upsert_clinvar_variants(rows_batch)
+                    rows_batch.clear()
+                processed += len(chunk)
+                if on_progress and matched % 5000 == 0:
+                    on_progress(matched)
+                maybe_emit()
+
+            if rows_batch:
+                if cancel_check and cancel_check():
+                    raise ImportCancelled("ClinVar cache import cancelled.")
+                db.upsert_clinvar_variants(rows_batch)
+
+            db.add_clinvar_import(file_hash, matched, commit=False)
+            db.commit()
+        except ImportCancelled:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+
+        return {"file_hash_sha256": file_hash, "variant_count": matched}
+    finally:
+        cache_conn.close()
+        db.close()
 
 
 def import_clinvar_snapshot(
