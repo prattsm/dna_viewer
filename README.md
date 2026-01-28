@@ -47,6 +47,7 @@ pytest
 - **Start screen:** Choose a profile (or create one) before accessing the rest of the app.
 - **Profiles:** Use the start screen or “Switch profile” in the top bar to change profiles.
 - **Import:** Choose the raw data `.txt` file (or a `.zip` containing it). If the zip has multiple `.txt` files, the app asks which one to use. You can cancel an import mid-run; cancelled imports are marked as such and do not write genotypes/insights.
+- **Import convenience:** The last successfully imported file path is remembered and shown next time you open the Import screen.
 - **Insights:** Review evidence-graded findings with limitations and genotype context.
 - **Variant Explorer:** Search by rsID to see your genotype and any matching module interpretation.
 - **Report Export:** Export HTML or PDF reports; optional encryption is available.

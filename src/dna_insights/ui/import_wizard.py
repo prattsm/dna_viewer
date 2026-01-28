@@ -28,6 +28,7 @@ from dna_insights.core.exceptions import ImportCancelled
 from dna_insights.core.importer import import_ancestry_file
 from dna_insights.core.parser import list_zip_txt_members
 from dna_insights.ui.widgets import prompt_passphrase
+from dna_insights.core.settings import save_settings
 
 
 class AutoCloseComboBox(QComboBox):
@@ -219,7 +220,16 @@ class ImportPage(QWidget):
         self._refresh_profiles()
         self.mode_combo.setEnabled(False)
         self._toggle_advanced(False)
+        self._load_last_import_path()
         self._update_import_button_state()
+
+    def _load_last_import_path(self) -> None:
+        value = self.state.settings.last_import_path
+        if not value:
+            return
+        path = Path(value).expanduser()
+        if path.exists():
+            self.file_input.setText(str(path))
 
     def _refresh_profiles(self) -> None:
         self._sync_current_profile(self.state.current_profile_id or "")
@@ -276,10 +286,16 @@ class ImportPage(QWidget):
         self.import_button.setEnabled(has_profile and has_file and not running)
 
     def _choose_file(self) -> None:
+        start_dir = ""
+        last_path = self.state.settings.last_import_path
+        if last_path:
+            candidate = Path(last_path).expanduser()
+            if candidate.parent.exists():
+                start_dir = str(candidate.parent)
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select AncestryDNA raw data",
-            "",
+            start_dir,
             "Raw data (*.txt *.zip)",
         )
         if file_path:
@@ -288,33 +304,37 @@ class ImportPage(QWidget):
             self.zip_member_label.setVisible(False)
             self.zip_member_label.setText("")
             if file_path.lower().endswith(".zip"):
-                members = list_zip_txt_members(Path(file_path))
-                if not members:
-                    QMessageBox.warning(self, "Import", "Zip file does not contain a .txt file.")
+                if not self._ensure_zip_member(Path(file_path)):
                     self.file_input.setText("")
                     self.zip_member_label.setVisible(False)
-                    return
-                if len(members) == 1:
-                    self._zip_member = members[0]
-                    self.zip_member_label.setText(f"Selected in zip: {self._zip_member}")
-                    self.zip_member_label.setVisible(True)
-                    return
-                choice, ok = QInputDialog.getItem(
-                    self,
-                    "Choose raw data file",
-                    "Select the .txt file inside the zip:",
-                    members,
-                    0,
-                    False,
-                )
-                if not ok or not choice:
-                    self.file_input.setText("")
-                    self.zip_member_label.setVisible(False)
-                    return
-                self._zip_member = choice
-                self.zip_member_label.setText(f"Selected in zip: {self._zip_member}")
-                self.zip_member_label.setVisible(True)
             self._update_import_button_state()
+
+    def _ensure_zip_member(self, file_path: Path) -> bool:
+        if not file_path.name.lower().endswith(".zip"):
+            return True
+        members = list_zip_txt_members(file_path)
+        if not members:
+            QMessageBox.warning(self, "Import", "Zip file does not contain a .txt file.")
+            return False
+        if len(members) == 1:
+            self._zip_member = members[0]
+            self.zip_member_label.setText(f"Selected in zip: {self._zip_member}")
+            self.zip_member_label.setVisible(True)
+            return True
+        choice, ok = QInputDialog.getItem(
+            self,
+            "Choose raw data file",
+            "Select the .txt file inside the zip:",
+            members,
+            0,
+            False,
+        )
+        if not ok or not choice:
+            return False
+        self._zip_member = choice
+        self.zip_member_label.setText(f"Selected in zip: {self._zip_member}")
+        self.zip_member_label.setVisible(True)
+        return True
 
     def _start_import(self) -> None:
         if self.state.current_profile_id is None:
@@ -349,6 +369,9 @@ class ImportPage(QWidget):
         if not file_path.exists():
             QMessageBox.information(self, "Import", "Selected file no longer exists.")
             return
+        if file_path.suffix.lower() == ".zip" and not self._zip_member:
+            if not self._ensure_zip_member(file_path):
+                return
         mode = self.mode_combo.currentData() or "curated"
 
         progress = QProgressDialog("Importing data...", "", 0, 100, self)
@@ -488,6 +511,9 @@ class ImportPage(QWidget):
             f"Imported {summary.qc_report.total_markers} markers. "
             f"Call rate {summary.qc_report.call_rate:.2%}.",
         )
+        if self.file_input.text():
+            self.state.settings.last_import_path = self.file_input.text()
+            save_settings(self.state.settings)
         self.state.data_changed.emit()
         self._last_import_ok = True
 

@@ -19,6 +19,7 @@ class AppSettings(BaseModel):
     encryption_enabled: bool = True
     encryption_salt: str | None = None
     app_lock_enabled: bool = False
+    last_import_path: str | None = None
 
 
 def get_config_dir() -> Path:
