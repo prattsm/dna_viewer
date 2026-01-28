@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -25,6 +26,7 @@ class ProfilesPage(QWidget):
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
 
         self.new_button = QPushButton("Create profile")
+        self.new_button.setObjectName("primaryButton")
         self.rename_button = QPushButton("Rename")
         self.delete_button = QPushButton("Delete")
 
@@ -38,18 +40,26 @@ class ProfilesPage(QWidget):
         helper_label.setObjectName("helperLabel")
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(8)
         button_row.addWidget(self.new_button)
         button_row.addWidget(self.rename_button)
         button_row.addWidget(self.delete_button)
         button_row.addStretch()
+
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 16, 16, 16)
+        card_layout.setSpacing(12)
+        card_layout.addWidget(self.list_widget)
+        card_layout.addLayout(button_row)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
         layout.addWidget(title_label)
         layout.addWidget(helper_label)
-        layout.addWidget(self.list_widget)
-        layout.addLayout(button_row)
+        layout.addWidget(card)
         self.setLayout(layout)
 
         self.state.data_changed.connect(self.refresh)

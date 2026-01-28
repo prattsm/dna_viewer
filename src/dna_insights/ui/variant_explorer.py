@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QFrame,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -21,6 +22,7 @@ class VariantExplorerPage(QWidget):
 
         self.input = QLineEdit()
         self.search_button = QPushButton("Search rsID")
+        self.search_button.setObjectName("primaryButton")
         self.result_label = QLabel("")
 
         title_label = QLabel("Variant Explorer")
@@ -28,15 +30,22 @@ class VariantExplorerPage(QWidget):
         helper_label = QLabel("Look up an rsID to see your genotype and any matching modules.")
         helper_label.setObjectName("helperLabel")
 
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 16, 16, 16)
+        card_layout.setSpacing(12)
+        card_layout.addWidget(QLabel("rsID"))
+        card_layout.addWidget(self.input)
+        card_layout.addWidget(self.search_button)
+        card_layout.addWidget(self.result_label)
+
         layout = QVBoxLayout()
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
         layout.addWidget(title_label)
         layout.addWidget(helper_label)
-        layout.addWidget(QLabel("rsID"))
-        layout.addWidget(self.input)
-        layout.addWidget(self.search_button)
-        layout.addWidget(self.result_label)
+        layout.addWidget(card)
         layout.addStretch()
         self.setLayout(layout)
 

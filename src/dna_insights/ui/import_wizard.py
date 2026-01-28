@@ -92,6 +92,8 @@ class ImportWorker(QObject):
 
 
 class ImportPage(QWidget):
+    manage_profiles_requested = Signal()
+
     def __init__(self, state: AppState, parent=None) -> None:
         super().__init__(parent)
         self.state = state
@@ -236,10 +238,11 @@ class ImportPage(QWidget):
         self._update_import_button_state()
 
     def _manage_profiles(self) -> None:
-        QMessageBox.information(self, "Profiles", "Use the Profiles tab to create, rename, or delete profiles.")
+        self.manage_profiles_requested.emit()
 
     def _toggle_advanced(self, checked: bool) -> None:
         self.mode_combo.setEnabled(checked)
+        self.mode_combo.setVisible(checked)
         if not checked:
             self.mode_combo.setCurrentIndex(0)
         self._update_mode_helper()

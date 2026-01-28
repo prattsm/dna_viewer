@@ -7,6 +7,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
+    QFrame,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -52,6 +53,7 @@ class SettingsPage(QWidget):
 
         self.data_dir_label = QLabel("")
         self.open_data_button = QPushButton("Open data folder")
+        self.open_data_button.setObjectName("secondaryButton")
 
         self.encryption_label = QLabel("Encryption is required for all profiles.")
 
@@ -73,21 +75,28 @@ class SettingsPage(QWidget):
         helper_label = QLabel("Privacy, clinical opt-ins, and data location.")
         helper_label.setObjectName("helperLabel")
 
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 16, 16, 16)
+        card_layout.setSpacing(12)
+        card_layout.addWidget(QLabel("Data directory"))
+        card_layout.addWidget(self.data_dir_label)
+        card_layout.addWidget(self.open_data_button)
+        card_layout.addWidget(self.encryption_label)
+        card_layout.addWidget(self.clinical_checkbox)
+        card_layout.addWidget(self.pgx_checkbox)
+        card_layout.addWidget(self.import_clinvar_button)
+        card_layout.addWidget(self.auto_import_label)
+        card_layout.addWidget(self.clinvar_status_label)
+        card_layout.addWidget(self.kb_label)
+
         layout = QVBoxLayout()
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
         layout.addWidget(title_label)
         layout.addWidget(helper_label)
-        layout.addWidget(QLabel("Data directory"))
-        layout.addWidget(self.data_dir_label)
-        layout.addWidget(self.open_data_button)
-        layout.addWidget(self.encryption_label)
-        layout.addWidget(self.clinical_checkbox)
-        layout.addWidget(self.pgx_checkbox)
-        layout.addWidget(self.import_clinvar_button)
-        layout.addWidget(self.auto_import_label)
-        layout.addWidget(self.clinvar_status_label)
-        layout.addWidget(self.kb_label)
+        layout.addWidget(card)
         layout.addWidget(self.banner)
         layout.addStretch()
         self.setLayout(layout)

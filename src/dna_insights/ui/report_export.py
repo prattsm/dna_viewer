@@ -7,6 +7,7 @@ from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
+    QFrame,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -29,6 +30,7 @@ class ReportExportPage(QWidget):
         self.encrypt_checkbox = QCheckBox("Encrypt exported report")
         self.encrypt_checkbox.setEnabled(self.state.encryption.is_enabled())
         self.export_html_button = QPushButton("Export HTML")
+        self.export_html_button.setObjectName("primaryButton")
         self.export_pdf_button = QPushButton("Export PDF")
         self.status_label = QLabel("")
 
@@ -37,16 +39,23 @@ class ReportExportPage(QWidget):
         helper_label = QLabel("Export a report for the current profile.")
         helper_label.setObjectName("helperLabel")
 
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 16, 16, 16)
+        card_layout.setSpacing(12)
+        card_layout.addWidget(self.redacted_checkbox)
+        card_layout.addWidget(self.encrypt_checkbox)
+        card_layout.addWidget(self.export_html_button)
+        card_layout.addWidget(self.export_pdf_button)
+        card_layout.addWidget(self.status_label)
+
         layout = QVBoxLayout()
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
         layout.addWidget(title_label)
         layout.addWidget(helper_label)
-        layout.addWidget(self.redacted_checkbox)
-        layout.addWidget(self.encrypt_checkbox)
-        layout.addWidget(self.export_html_button)
-        layout.addWidget(self.export_pdf_button)
-        layout.addWidget(self.status_label)
+        layout.addWidget(card)
         layout.addStretch()
         self.setLayout(layout)
 

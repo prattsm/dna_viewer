@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QFrame,
     QGroupBox,
     QLabel,
     QScrollArea,
@@ -29,12 +30,18 @@ class InsightsPage(QWidget):
         helper_label = QLabel("Evidence-graded summaries based on your imported DNA.")
         helper_label.setObjectName("helperLabel")
 
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.addWidget(self.scroll)
+
         layout = QVBoxLayout()
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
         layout.addWidget(title_label)
         layout.addWidget(helper_label)
-        layout.addWidget(self.scroll)
+        layout.addWidget(card)
         self.setLayout(layout)
 
         self.state.profile_changed.connect(self.refresh)
