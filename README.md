@@ -71,6 +71,10 @@ Each module includes evidence grading, limitations, and references that appear i
 - For the full ClinVar dataset, place the **variant summary** file at:
   - `<data_dir>/clinvar/variant_summary.txt.gz` (or `.txt`)
   - The app will auto-import it on launch (no manual step required), or right after your DNA import completes.
+- For faster future imports, you can build a local **ClinVar cache** once and the app will use it automatically:
+  - `dna-insights-build-clinvar-cache --input /path/to/variant_summary.txt`
+  - Or: `python3 -m dna_insights.tools.build_clinvar_cache --input /path/to/variant_summary.txt`
+  - Cache location (default): `<data_dir>/clinvar/clinvar_cache.sqlite3`
 - If you are packaging a distribution and want the full file to ship with the app, place it at:
   - `src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz` (or `.txt`)
   - This path is git-ignored to keep large files out of the repo.

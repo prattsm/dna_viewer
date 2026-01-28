@@ -9,7 +9,12 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from dna_insights.app_state import AppState
 from dna_insights.constants import APP_NAME, LOG_FILENAME
-from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot, seed_clinvar_if_missing
+from dna_insights.core.clinvar import (
+    auto_import_source,
+    import_clinvar_cache,
+    import_clinvar_snapshot,
+    seed_clinvar_if_missing,
+)
 from dna_insights.core.knowledge_base import load_manifest, load_modules
 from dna_insights.core.security import EncryptionManager
 from dna_insights.core.settings import load_settings, resolve_data_dir, save_settings
@@ -21,20 +26,29 @@ class ClinVarAutoWorker(QObject):
     finished = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str]) -> None:
+    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str], source_kind: str) -> None:
         super().__init__()
         self.db_path = db_path
         self.file_path = file_path
         self.rsid_filter = rsid_filter
+        self.source_kind = source_kind
 
     def run(self) -> None:
         try:
-            summary = import_clinvar_snapshot(
-                file_path=self.file_path,
-                db_path=self.db_path,
-                replace=True,
-                rsid_filter=self.rsid_filter,
-            )
+            if self.source_kind == "cache":
+                summary = import_clinvar_cache(
+                    cache_path=self.file_path,
+                    db_path=self.db_path,
+                    replace=True,
+                    rsid_filter=self.rsid_filter,
+                )
+            else:
+                summary = import_clinvar_snapshot(
+                    file_path=self.file_path,
+                    db_path=self.db_path,
+                    replace=True,
+                    rsid_filter=self.rsid_filter,
+                )
             self.finished.emit(summary)
         except Exception as exc:  # pragma: no cover - UI only
             self.error.emit(str(exc))
@@ -51,15 +65,17 @@ class ClinVarAutoController(QObject):
     def start(self) -> None:
         if self.thread is not None:
             return
-        file_path = auto_import_path(self.data_dir)
-        if not file_path:
+        source = auto_import_source(self.data_dir)
+        if not source:
             return
         rsid_filter = self.state.db.get_all_rsids()
         if not rsid_filter:
             logging.info("ClinVar auto-import skipped: no rsIDs available yet.")
             return
+        file_path = source["path"]
+        source_kind = source["kind"]
         self.thread = QThread(self)
-        self.worker = ClinVarAutoWorker(self.state.db_path, file_path, rsid_filter)
+        self.worker = ClinVarAutoWorker(self.state.db_path, file_path, rsid_filter, source_kind)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._on_done, Qt.QueuedConnection)

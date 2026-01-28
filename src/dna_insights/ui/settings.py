@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
-from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot, seed_metadata
+from dna_insights.core.clinvar import auto_import_source, import_clinvar_snapshot, seed_metadata
 from dna_insights.core.settings import resolve_data_dir, save_settings
 
 
@@ -162,7 +162,7 @@ class SettingsPage(QWidget):
         QMessageBox.information(
             self,
             "ClinVar import",
-            f"Imported {summary.get('variant_count', 0)} high-confidence variants.",
+            f"Imported {summary.get('variant_count', 0)} variants.",
         )
         self.state.data_changed.emit()
 
@@ -194,12 +194,17 @@ class SettingsPage(QWidget):
 
     def _refresh_auto_import_hint(self) -> None:
         data_dir = resolve_data_dir(self.state.settings)
-        auto_path = auto_import_path(data_dir)
-        if auto_path:
-            self.auto_import_label.setText(f"Auto import source found: {auto_path}")
+        source = auto_import_source(data_dir)
+        if source:
+            label = f"Auto import source found: {source['path']}"
+            if source.get("kind") == "cache":
+                label = f"Auto import source found (cache): {source['path']}"
+            self.auto_import_label.setText(label)
             return
         self.auto_import_label.setText(
             f"Auto import: drop a ClinVar file at {data_dir / 'clinvar'} named "
             "'variant_summary.txt.gz' or 'clinvar.vcf.gz' to auto-import on launch. "
+            "For faster imports, build a cache at "
+            f"{data_dir / 'clinvar' / 'clinvar_cache.sqlite3'}. "
             "You can also bundle a full ClinVar file at src/dna_insights/knowledge_base/clinvar_full/variant_summary.txt.gz."
         )

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from dna_insights.app_state import AppState
-from dna_insights.core.clinvar import auto_import_path, import_clinvar_snapshot
+from dna_insights.core.clinvar import auto_import_source, import_clinvar_cache, import_clinvar_snapshot
 from dna_insights.core.exceptions import ImportCancelled
 from dna_insights.core.importer import import_ancestry_file
 from dna_insights.core.parser import list_zip_txt_members
@@ -372,14 +372,19 @@ class ImportPage(QWidget):
 
     def _maybe_auto_import_clinvar(self) -> None:
         data_dir = self.state.db_path.parent
-        clinvar_path = auto_import_path(data_dir)
-        if not clinvar_path:
+        source = auto_import_source(data_dir)
+        if not source:
             return
         rsid_filter = self.state.db.get_all_rsids()
         if not rsid_filter:
             return
+        clinvar_path = source["path"]
+        clinvar_kind = source["kind"]
 
-        progress = QProgressDialog("Updating ClinVar matches...", "", 0, 100, self)
+        label_prefix = "Updating ClinVar matches..."
+        if clinvar_kind == "cache":
+            label_prefix = "Updating ClinVar matches (cache)..."
+        progress = QProgressDialog(label_prefix, "", 0, 100, self)
         progress.setWindowTitle("ClinVar Import")
         progress.setAutoClose(False)
         progress.setAutoReset(False)
@@ -397,7 +402,7 @@ class ImportPage(QWidget):
         }
 
         def update_label() -> None:
-            label = "Updating ClinVar matches..."
+            label = label_prefix
             if status["percent"]:
                 label += f" — {status['percent']}%"
             if status["count"]:
@@ -423,7 +428,7 @@ class ImportPage(QWidget):
             update_label()
 
         self._clinvar_thread = QThread(self)
-        self._clinvar_worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter)
+        self._clinvar_worker = ClinVarAutoWorker(self.state.db_path, clinvar_path, rsid_filter, clinvar_kind)
         thread = self._clinvar_thread
         worker = self._clinvar_worker
         worker.moveToThread(thread)
@@ -509,11 +514,12 @@ class ClinVarAutoWorker(QObject):
     canceled = Signal()
     error = Signal(str)
 
-    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str]) -> None:
+    def __init__(self, db_path: Path, file_path: Path, rsid_filter: set[str], source_kind: str) -> None:
         super().__init__()
         self.db_path = db_path
         self.file_path = file_path
         self.rsid_filter = rsid_filter
+        self.source_kind = source_kind
         self._cancel_event = threading.Event()
 
     def request_cancel(self) -> None:
@@ -524,15 +530,26 @@ class ClinVarAutoWorker(QObject):
 
     def run(self) -> None:
         try:
-            summary = import_clinvar_snapshot(
-                file_path=self.file_path,
-                db_path=self.db_path,
-                on_progress=self.progress.emit,
-                on_progress_detail=self.detail.emit,
-                replace=True,
-                rsid_filter=self.rsid_filter,
-                cancel_check=self._cancel_check,
-            )
+            if self.source_kind == "cache":
+                summary = import_clinvar_cache(
+                    cache_path=self.file_path,
+                    db_path=self.db_path,
+                    on_progress=self.progress.emit,
+                    on_progress_detail=self.detail.emit,
+                    replace=True,
+                    rsid_filter=self.rsid_filter,
+                    cancel_check=self._cancel_check,
+                )
+            else:
+                summary = import_clinvar_snapshot(
+                    file_path=self.file_path,
+                    db_path=self.db_path,
+                    on_progress=self.progress.emit,
+                    on_progress_detail=self.detail.emit,
+                    replace=True,
+                    rsid_filter=self.rsid_filter,
+                    cancel_check=self._cancel_check,
+                )
             self.finished.emit(summary)
         except ImportCancelled:
             self.canceled.emit()
