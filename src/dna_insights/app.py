@@ -19,6 +19,7 @@ from dna_insights.core.knowledge_base import load_manifest, load_modules
 from dna_insights.core.security import EncryptionManager
 from dna_insights.core.settings import load_settings, resolve_data_dir, save_settings
 from dna_insights.ui.main_window import MainWindow
+from dna_insights.ui.theme import apply_theme
 from dna_insights.ui.widgets import prompt_passphrase
 
 
@@ -137,6 +138,7 @@ def main() -> int:
     settings, first_run = load_settings()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    apply_theme(app)
 
     data_dir = resolve_data_dir(settings)
     if first_run:

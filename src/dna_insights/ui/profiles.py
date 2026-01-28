@@ -32,6 +32,11 @@ class ProfilesPage(QWidget):
         self.rename_button.clicked.connect(self._rename_profile)
         self.delete_button.clicked.connect(self._delete_profile)
 
+        title_label = QLabel("Profiles")
+        title_label.setObjectName("titleLabel")
+        helper_label = QLabel("Create separate local profiles for each person.")
+        helper_label.setObjectName("helperLabel")
+
         button_row = QHBoxLayout()
         button_row.addWidget(self.new_button)
         button_row.addWidget(self.rename_button)
@@ -39,7 +44,10 @@ class ProfilesPage(QWidget):
         button_row.addStretch()
 
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("Profiles"))
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        layout.addWidget(title_label)
+        layout.addWidget(helper_label)
         layout.addWidget(self.list_widget)
         layout.addLayout(button_row)
         self.setLayout(layout)

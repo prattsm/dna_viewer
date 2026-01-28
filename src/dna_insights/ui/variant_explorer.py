@@ -23,7 +23,16 @@ class VariantExplorerPage(QWidget):
         self.search_button = QPushButton("Search rsID")
         self.result_label = QLabel("")
 
+        title_label = QLabel("Variant Explorer")
+        title_label.setObjectName("titleLabel")
+        helper_label = QLabel("Look up an rsID to see your genotype and any matching modules.")
+        helper_label.setObjectName("helperLabel")
+
         layout = QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        layout.addWidget(title_label)
+        layout.addWidget(helper_label)
         layout.addWidget(QLabel("rsID"))
         layout.addWidget(self.input)
         layout.addWidget(self.search_button)

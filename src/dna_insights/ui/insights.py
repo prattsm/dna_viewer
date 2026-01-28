@@ -24,7 +24,16 @@ class InsightsPage(QWidget):
         self.container.setLayout(self.container_layout)
         self.scroll.setWidget(self.container)
 
+        title_label = QLabel("Insights")
+        title_label.setObjectName("titleLabel")
+        helper_label = QLabel("Evidence-graded summaries based on your imported DNA.")
+        helper_label.setObjectName("helperLabel")
+
         layout = QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        layout.addWidget(title_label)
+        layout.addWidget(helper_label)
         layout.addWidget(self.scroll)
         self.setLayout(layout)
 

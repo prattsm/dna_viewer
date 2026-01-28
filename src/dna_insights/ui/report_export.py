@@ -32,7 +32,16 @@ class ReportExportPage(QWidget):
         self.export_pdf_button = QPushButton("Export PDF")
         self.status_label = QLabel("")
 
+        title_label = QLabel("Report Export")
+        title_label.setObjectName("titleLabel")
+        helper_label = QLabel("Export a report for the current profile.")
+        helper_label.setObjectName("helperLabel")
+
         layout = QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        layout.addWidget(title_label)
+        layout.addWidget(helper_label)
         layout.addWidget(self.redacted_checkbox)
         layout.addWidget(self.encrypt_checkbox)
         layout.addWidget(self.export_html_button)

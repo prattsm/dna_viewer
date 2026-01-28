@@ -68,7 +68,16 @@ class SettingsPage(QWidget):
         self.kb_label = QLabel(f"Knowledge base version: {self.state.manifest.kb_version}")
         self.banner = QLabel("Educational only. Not medical advice. Confirm health-related findings clinically.")
 
+        title_label = QLabel("Settings")
+        title_label.setObjectName("titleLabel")
+        helper_label = QLabel("Privacy, clinical opt-ins, and data location.")
+        helper_label.setObjectName("helperLabel")
+
         layout = QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        layout.addWidget(title_label)
+        layout.addWidget(helper_label)
         layout.addWidget(QLabel("Data directory"))
         layout.addWidget(self.data_dir_label)
         layout.addWidget(self.open_data_button)

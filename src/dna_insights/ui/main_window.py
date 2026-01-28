@@ -28,9 +28,10 @@ class MainWindow(QMainWindow):
         self.resize(1000, 700)
 
         banner = QLabel("Educational only. Not medical advice. Confirm health-related findings clinically.")
-        banner.setStyleSheet("padding: 8px; background: #ffe9d6; border-radius: 6px;")
+        banner.setObjectName("bannerLabel")
 
         self.nav = QListWidget()
+        self.nav.setObjectName("navList")
         self.nav.addItems([
             "Profiles",
             "Import",
@@ -56,10 +57,13 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(0)
 
         content_layout = QHBoxLayout()
+        content_layout.setSpacing(16)
         content_layout.addWidget(self.nav)
         content_layout.addWidget(self.stack, 1)
 
         main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(16)
         main_layout.addWidget(banner)
         main_layout.addLayout(content_layout)
 

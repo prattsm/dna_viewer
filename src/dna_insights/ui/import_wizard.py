@@ -7,8 +7,10 @@ import threading
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -110,33 +112,111 @@ class ImportPage(QWidget):
         self.file_input = QLineEdit()
         self.file_input.setReadOnly(True)
         self.browse_button = QPushButton("Browse")
+        self.browse_button.setObjectName("secondaryButton")
         self.mode_combo = AutoCloseComboBox()
-        self.mode_combo.addItems(["curated", "full"])
-        self.import_button = QPushButton("Start import")
-        self.summary_label = QLabel("")
+        self.mode_combo.addItem("Curated (recommended)", "curated")
+        self.mode_combo.addItem("Full (advanced)", "full")
+        self.import_button = QPushButton("Import")
+        self.import_button.setObjectName("primaryButton")
 
+        self.title_label = QLabel("Import DNA data")
+        self.title_label.setObjectName("titleLabel")
+        self.subtitle_label = QLabel("Stored locally. No network calls unless you opt in.")
+        self.subtitle_label.setObjectName("helperLabel")
+
+        self.manage_profiles_button = QPushButton("Manage profiles...")
+        self.manage_profiles_button.setObjectName("linkButton")
+
+        self.zip_member_label = QLabel("")
+        self.zip_member_label.setObjectName("helperLabel")
+        self.zip_member_label.setVisible(False)
+
+        self.advanced_toggle = QCheckBox("Show advanced options")
+        self.mode_helper = QLabel("")
+        self.mode_helper.setObjectName("helperLabel")
+
+        self.status_banner = QFrame()
+        self.status_banner.setObjectName("statusBanner")
+        self.status_banner.setVisible(False)
+        self.status_text = QLabel("")
+        self.status_text.setWordWrap(True)
+        status_layout = QVBoxLayout(self.status_banner)
+        status_layout.setContentsMargins(12, 8, 12, 8)
+        status_layout.addWidget(self.status_text)
+
+        profile_card = QFrame()
+        profile_card.setObjectName("card")
+        profile_layout = QVBoxLayout(profile_card)
+        profile_layout.setContentsMargins(16, 16, 16, 16)
+        profile_layout.setSpacing(8)
+        profile_label = QLabel("Profile")
+        profile_label.setObjectName("sectionLabel")
+        profile_layout.addWidget(profile_label)
+        profile_layout.addWidget(self.profile_combo)
+        profile_layout.addWidget(self.manage_profiles_button)
+
+        file_card = QFrame()
+        file_card.setObjectName("card")
+        file_layout = QVBoxLayout(file_card)
+        file_layout.setContentsMargins(16, 16, 16, 16)
+        file_layout.setSpacing(8)
+        file_label = QLabel("Raw data file")
+        file_label.setObjectName("sectionLabel")
+        file_layout.addWidget(file_label)
         file_row = QHBoxLayout()
-        file_row.addWidget(self.file_input)
+        file_row.setSpacing(8)
+        file_row.addWidget(self.file_input, 1)
         file_row.addWidget(self.browse_button)
+        file_layout.addLayout(file_row)
+        file_helper = QLabel("Supported: .txt or .zip from AncestryDNA")
+        file_helper.setObjectName("helperLabel")
+        file_layout.addWidget(file_helper)
+        file_layout.addWidget(self.zip_member_label)
+
+        options_card = QFrame()
+        options_card.setObjectName("card")
+        options_layout = QVBoxLayout(options_card)
+        options_layout.setContentsMargins(16, 16, 16, 16)
+        options_layout.setSpacing(8)
+        options_label = QLabel("Mode")
+        options_label.setObjectName("sectionLabel")
+        options_layout.addWidget(options_label)
+        options_layout.addWidget(self.advanced_toggle)
+        options_layout.addWidget(self.mode_combo)
+        options_layout.addWidget(self.mode_helper)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addWidget(self.import_button)
+        action_row.addStretch()
 
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("Profile"))
-        layout.addWidget(self.profile_combo)
-        layout.addWidget(QLabel("Ancestry raw data file (.txt or .zip)"))
-        layout.addLayout(file_row)
-        layout.addWidget(QLabel("Import mode"))
-        layout.addWidget(self.mode_combo)
-        layout.addWidget(self.import_button)
-        layout.addWidget(self.summary_label)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.subtitle_label)
+        layout.addWidget(profile_card)
+        layout.addWidget(file_card)
+        layout.addWidget(options_card)
+        layout.addLayout(action_row)
+        layout.addWidget(self.status_banner)
         layout.addStretch()
         self.setLayout(layout)
 
         self.browse_button.clicked.connect(self._choose_file)
         self.import_button.clicked.connect(self._start_import)
+        self.manage_profiles_button.clicked.connect(self._manage_profiles)
+        self.advanced_toggle.toggled.connect(self._toggle_advanced)
+        self.mode_combo.currentIndexChanged.connect(self._update_mode_helper)
+        self.file_input.textChanged.connect(self._update_import_button_state)
+        self.profile_combo.currentIndexChanged.connect(self._update_import_button_state)
         self.state.data_changed.connect(self._refresh_profiles)
         self.state.profile_changed.connect(self._sync_current_profile)
 
         self._refresh_profiles()
+        self.mode_combo.setEnabled(False)
+        self._toggle_advanced(False)
+        self._update_import_button_state()
 
     def _refresh_profiles(self) -> None:
         current = self.state.current_profile_id
@@ -147,11 +227,54 @@ class ImportPage(QWidget):
             index = self.profile_combo.findData(current)
             if index >= 0:
                 self.profile_combo.setCurrentIndex(index)
+        self._update_import_button_state()
 
     def _sync_current_profile(self, profile_id: str) -> None:
         index = self.profile_combo.findData(profile_id)
         if index >= 0:
             self.profile_combo.setCurrentIndex(index)
+        self._update_import_button_state()
+
+    def _manage_profiles(self) -> None:
+        QMessageBox.information(self, "Profiles", "Use the Profiles tab to create, rename, or delete profiles.")
+
+    def _toggle_advanced(self, checked: bool) -> None:
+        self.mode_combo.setEnabled(checked)
+        if not checked:
+            self.mode_combo.setCurrentIndex(0)
+        self._update_mode_helper()
+
+    def _update_mode_helper(self) -> None:
+        mode = self.mode_combo.currentData() or "curated"
+        if mode == "full":
+            self.mode_helper.setText("Imports all markers (slower, larger).")
+        else:
+            self.mode_helper.setText("Imports only markers used by modules (faster, smaller).")
+
+    def _set_status(self, kind: str, text: str) -> None:
+        if not self.status_banner:
+            return
+        self.status_banner.setProperty("kind", kind)
+        self.status_banner.setVisible(True)
+        self.status_text.setText(text)
+        self.status_banner.style().unpolish(self.status_banner)
+        self.status_banner.style().polish(self.status_banner)
+
+    def _append_status(self, text: str) -> None:
+        if not self.status_banner.isVisible():
+            self._set_status("info", text)
+            return
+        current = self.status_text.text().strip()
+        if current:
+            self.status_text.setText(f"{current} {text}")
+        else:
+            self.status_text.setText(text)
+
+    def _update_import_button_state(self) -> None:
+        has_profile = self.profile_combo.currentIndex() >= 0
+        has_file = bool(self.file_input.text())
+        running = self._import_thread is not None and self._import_thread.isRunning()
+        self.import_button.setEnabled(has_profile and has_file and not running)
 
     def _choose_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -163,14 +286,19 @@ class ImportPage(QWidget):
         if file_path:
             self.file_input.setText(file_path)
             self._zip_member = None
+            self.zip_member_label.setVisible(False)
+            self.zip_member_label.setText("")
             if file_path.lower().endswith(".zip"):
                 members = list_zip_txt_members(Path(file_path))
                 if not members:
                     QMessageBox.warning(self, "Import", "Zip file does not contain a .txt file.")
                     self.file_input.setText("")
+                    self.zip_member_label.setVisible(False)
                     return
                 if len(members) == 1:
                     self._zip_member = members[0]
+                    self.zip_member_label.setText(f"Selected in zip: {self._zip_member}")
+                    self.zip_member_label.setVisible(True)
                     return
                 choice, ok = QInputDialog.getItem(
                     self,
@@ -182,8 +310,12 @@ class ImportPage(QWidget):
                 )
                 if not ok or not choice:
                     self.file_input.setText("")
+                    self.zip_member_label.setVisible(False)
                     return
                 self._zip_member = choice
+                self.zip_member_label.setText(f"Selected in zip: {self._zip_member}")
+                self.zip_member_label.setVisible(True)
+            self._update_import_button_state()
 
     def _start_import(self) -> None:
         if self.profile_combo.currentIndex() < 0:
@@ -215,7 +347,7 @@ class ImportPage(QWidget):
         if not file_path.exists():
             QMessageBox.information(self, "Import", "Selected file no longer exists.")
             return
-        mode = self.mode_combo.currentText()
+        mode = self.mode_combo.currentData() or "curated"
 
         progress = QProgressDialog("Importing data...", "", 0, 100, self)
         progress.setWindowTitle("Import")
@@ -233,6 +365,9 @@ class ImportPage(QWidget):
         self.browse_button.setEnabled(False)
         self.profile_combo.setEnabled(False)
         self.mode_combo.setEnabled(False)
+        self.advanced_toggle.setEnabled(False)
+        self.import_button.setText("Importing...")
+        self._set_status("info", "Importing data...")
 
         status = {
             "count": 0,
@@ -347,8 +482,10 @@ class ImportPage(QWidget):
             self._import_status["eta"] = 0.0
         self._update_import_label()
         self._mark_import_done()
-        self.summary_label.setText(
-            f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
+        self._set_status(
+            "success",
+            f"Imported {summary.qc_report.total_markers} markers. "
+            f"Call rate {summary.qc_report.call_rate:.2%}.",
         )
         self.state.data_changed.emit()
         self._last_import_ok = True
@@ -357,13 +494,14 @@ class ImportPage(QWidget):
     def _cancelled_import(self) -> None:
         self._finalize_import_progress()
         self._last_import_ok = False
-        self.summary_label.setText("Import cancelled.")
+        self._set_status("info", "Import cancelled.")
 
     @Slot(str)
     def _fail_import(self, message: str) -> None:
         self._finalize_import_progress()
         self._last_import_ok = False
         QMessageBox.critical(self, "Import failed", message)
+        self._set_status("error", "Import failed. See the error dialog for details.")
 
     def _cancel_import(self) -> None:
         if not self._import_worker or not self._import_thread or not self._import_thread.isRunning():
@@ -480,9 +618,7 @@ class ImportPage(QWidget):
         progress.deleteLater()
         if summary.get("skipped"):
             return
-        self.summary_label.setText(
-            self.summary_label.text() + f" ClinVar matches updated ({summary.get('variant_count', 0)} variants)."
-        )
+        self._append_status(f"ClinVar matches updated ({summary.get('variant_count', 0)} variants).")
         self.state.data_changed.emit()
 
     def _fail_clinvar(self, message: str, progress) -> None:
@@ -490,6 +626,7 @@ class ImportPage(QWidget):
         progress.hide()
         progress.deleteLater()
         QMessageBox.warning(self, "ClinVar import failed", message)
+        self._set_status("warning", "ClinVar import failed. See the warning dialog for details.")
 
     def _cancel_clinvar_request(self) -> None:
         if not self._clinvar_worker or not self._clinvar_thread or not self._clinvar_thread.isRunning():
@@ -504,13 +641,16 @@ class ImportPage(QWidget):
         progress.blockSignals(True)
         progress.hide()
         progress.deleteLater()
-        self.summary_label.setText(self.summary_label.text() + " ClinVar import cancelled.")
+        self._append_status("ClinVar import cancelled.")
 
     def _reenable_import_ui(self) -> None:
         self.import_button.setEnabled(True)
+        self.import_button.setText("Import")
         self.browse_button.setEnabled(True)
         self.profile_combo.setEnabled(True)
         self.mode_combo.setEnabled(True)
+        self.advanced_toggle.setEnabled(True)
+        self._update_import_button_state()
 
     def _cleanup_import_refs(self) -> None:
         self._import_thread = None
