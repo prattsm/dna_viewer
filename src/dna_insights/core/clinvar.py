@@ -163,6 +163,15 @@ def _has_required_columns(header: list[str]) -> bool:
     return rs_idx is not None and clnsig_idx is not None and review_idx is not None
 
 
+def _field_at(line: str, index: int) -> str:
+    if index < 0:
+        return ""
+    parts = line.rstrip("\n").split("\t", index + 1)
+    if len(parts) <= index:
+        return ""
+    return parts[index]
+
+
 def _is_variant_summary(path: Path) -> bool:
     name = path.name.lower()
     if "variant_summary" in name:
@@ -196,7 +205,7 @@ def _iter_variant_summary(
                 if file_path.suffix.lower() == ".gz":
                     bytes_read = _compressed_bytes_read(handle)
                 else:
-                    bytes_read += len(line.encode("utf-8", errors="ignore"))
+                    bytes_read += len(line)
                 if bytes_read - last_emit >= 512 * 1024 or bytes_read >= total_bytes:
                     last_emit = bytes_read
                     elapsed = max(time.monotonic() - start_time, 0.001)
@@ -231,6 +240,23 @@ def _iter_variant_summary(
         if rs_idx is None or clnsig_idx is None or review_idx is None:
             raise ValueError("variant_summary is missing required columns.")
 
+        max_index = max(
+            idx
+            for idx in (
+                rs_idx,
+                clnsig_idx,
+                review_idx,
+                assembly_idx,
+                chrom_idx,
+                pos_idx,
+                ref_idx,
+                alt_idx,
+                phenotype_idx,
+                last_eval_idx,
+            )
+            if idx is not None
+        )
+
         for line in handle:
             if cancel_check and cancel_check():
                 raise ImportCancelled("ClinVar import cancelled.")
@@ -238,7 +264,7 @@ def _iter_variant_summary(
                 if file_path.suffix.lower() == ".gz":
                     bytes_read = _compressed_bytes_read(handle)
                 else:
-                    bytes_read += len(line.encode("utf-8", errors="ignore"))
+                    bytes_read += len(line)
                 if bytes_read - last_emit >= 512 * 1024 or bytes_read >= total_bytes:
                     last_emit = bytes_read
                     elapsed = max(time.monotonic() - start_time, 0.001)
@@ -249,14 +275,15 @@ def _iter_variant_summary(
                     on_progress_detail(percent, bytes_read, eta_seconds)
             if not line.strip():
                 continue
-            parts = line.rstrip("\n").split("\t")
-            if rs_idx >= len(parts):
-                continue
-            rs_value = parts[rs_idx].strip()
+            rs_value = _field_at(line, rs_idx).strip()
             if not rs_value or rs_value == "-1":
                 continue
             rsid = rs_value if rs_value.startswith("rs") else f"rs{rs_value}"
             if rsid_filter is not None and rsid not in rsid_filter:
+                continue
+
+            parts = line.rstrip("\n").split("\t", max_index + 1)
+            if rs_idx >= len(parts):
                 continue
 
             assembly = parts[assembly_idx].strip() if assembly_idx is not None and assembly_idx < len(parts) else ""
@@ -396,6 +423,8 @@ def import_clinvar_snapshot(
                         unique_rsids.add(rsid)
 
                     if len(batch) >= BATCH_SIZE:
+                        if cancel_check and cancel_check():
+                            raise ImportCancelled("ClinVar import cancelled.")
                         db.upsert_clinvar_variants(batch)
                         batch.clear()
 
@@ -419,7 +448,7 @@ def import_clinvar_snapshot(
                             if file_path.suffix.lower() == ".gz":
                                 bytes_read = _compressed_bytes_read(handle)
                             else:
-                                bytes_read += len(line.encode("utf-8", errors="ignore"))
+                                bytes_read += len(line)
                             if bytes_read - last_emit >= 512 * 1024 or bytes_read >= total_bytes:
                                 last_emit = bytes_read
                                 elapsed = max(time.monotonic() - start_time, 0.001)
@@ -463,6 +492,8 @@ def import_clinvar_snapshot(
                             unique_rsids.add(rsid)
 
                         if len(batch) >= BATCH_SIZE:
+                            if cancel_check and cancel_check():
+                                raise ImportCancelled("ClinVar import cancelled.")
                             db.upsert_clinvar_variants(batch)
                             batch.clear()
 
@@ -472,6 +503,8 @@ def import_clinvar_snapshot(
                     _close_text(handle)
 
             if batch:
+                if cancel_check and cancel_check():
+                    raise ImportCancelled("ClinVar import cancelled.")
                 db.upsert_clinvar_variants(batch)
 
             db.add_clinvar_import(file_hash, len(unique_rsids), commit=False)
