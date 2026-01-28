@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from dna_insights.core.clinvar import (
+    build_clinvar_cache,
     classify_clinvar,
+    import_clinvar_cache,
     import_clinvar_snapshot,
     seed_clinvar_if_missing,
     seed_metadata,
@@ -46,6 +48,21 @@ def test_variant_summary_import(tmp_path: Path) -> None:
     sample_path = Path("tests/fixtures/variant_summary_sample.txt")
     summary = import_clinvar_snapshot(
         file_path=sample_path,
+        db_path=db_path,
+        rsid_filter={"rs123", "rs456", "rs789"},
+    )
+    assert summary["variant_count"] == 3
+
+
+def test_clinvar_cache_import(tmp_path: Path) -> None:
+    cache_path = tmp_path / "clinvar_cache.sqlite3"
+    sample_path = Path("tests/fixtures/variant_summary_sample.txt")
+    build_summary = build_clinvar_cache(input_path=sample_path, output_path=cache_path)
+    assert build_summary["variant_count"] >= 3
+
+    db_path = tmp_path / "cache_import.sqlite3"
+    summary = import_clinvar_cache(
+        cache_path=cache_path,
         db_path=db_path,
         rsid_filter={"rs123", "rs456", "rs789"},
     )
