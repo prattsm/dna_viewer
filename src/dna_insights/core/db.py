@@ -8,7 +8,7 @@ from typing import Iterable
 from dna_insights.core.utils import safe_uuid, utc_now_iso
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class Database:
@@ -124,6 +124,15 @@ class Database:
                 self.conn.execute("ALTER TABLE imports ADD COLUMN error_message TEXT")
             if "zip_member" not in existing:
                 self.conn.execute("ALTER TABLE imports ADD COLUMN zip_member TEXT")
+
+        if version < 4:
+            self.conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS clinvar_checked (
+                    rsid TEXT PRIMARY KEY
+                );
+                """
+            )
 
         if version < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -370,6 +379,18 @@ class Database:
 
     def clear_clinvar_variants(self, *, commit: bool = True) -> None:
         self.conn.execute("DELETE FROM clinvar_variants")
+        if commit:
+            self.conn.commit()
+
+    def get_clinvar_checked_rsids(self) -> set[str]:
+        cur = self.conn.execute("SELECT rsid FROM clinvar_checked")
+        return {row["rsid"] for row in cur.fetchall()}
+
+    def mark_clinvar_checked(self, rsids: Iterable[str], *, commit: bool = True) -> None:
+        rows = [(rsid,) for rsid in rsids]
+        if not rows:
+            return
+        self.conn.executemany("INSERT OR IGNORE INTO clinvar_checked (rsid) VALUES (?)", rows)
         if commit:
             self.conn.commit()
 

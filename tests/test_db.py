@@ -47,3 +47,13 @@ def test_import_status_and_rsids(tmp_path: Path) -> None:
     db.commit()
     assert db.get_all_rsids() == {"rs1", "rs2"}
     db.close()
+
+
+def test_clinvar_checked(tmp_path: Path) -> None:
+    db_path = tmp_path / "checked.sqlite3"
+    db = Database(db_path)
+    db.mark_clinvar_checked({"rs1", "rs2"})
+    checked = db.get_clinvar_checked_rsids()
+    assert "rs1" in checked
+    assert "rs2" in checked
+    db.close()

@@ -650,6 +650,7 @@ def import_clinvar_cache(
                     raise ImportCancelled("ClinVar cache import cancelled.")
                 db.upsert_clinvar_variants(rows_batch)
 
+            db.mark_clinvar_checked(rsid_filter, commit=False)
             db.add_clinvar_import(file_hash, matched, commit=False)
             db.commit()
         except ImportCancelled:
@@ -799,6 +800,8 @@ def import_clinvar_snapshot(
                     raise ImportCancelled("ClinVar import cancelled.")
                 db.upsert_clinvar_variants(batch)
 
+            if rsid_filter is not None:
+                db.mark_clinvar_checked(rsid_filter, commit=False)
             db.add_clinvar_import(file_hash, len(unique_rsids), commit=False)
             db.commit()
         except ImportCancelled:
