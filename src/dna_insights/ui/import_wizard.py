@@ -129,7 +129,7 @@ class ImportPage(QWidget):
 
         self.switch_profile_button = QPushButton("Switch profile")
         self.switch_profile_button.setObjectName("linkButton")
-        self.manage_profiles_button.setObjectName("linkButton")
+        self.switch_profile_button.setObjectName("linkButton")
 
         self.zip_member_label = QLabel("")
         self.zip_member_label.setObjectName("helperLabel")
