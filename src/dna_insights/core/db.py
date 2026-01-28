@@ -331,7 +331,7 @@ class Database:
             rows,
         )
 
-    def add_clinvar_import(self, file_hash_sha256: str, variant_count: int) -> str:
+    def add_clinvar_import(self, file_hash_sha256: str, variant_count: int, *, commit: bool = True) -> str:
         import_id = safe_uuid()
         self.conn.execute(
             """
@@ -340,7 +340,8 @@ class Database:
             """,
             (import_id, file_hash_sha256, utc_now_iso(), variant_count),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return import_id
 
     def get_latest_clinvar_import(self) -> dict | None:

@@ -10,7 +10,7 @@ from typing import Callable
 
 from dna_insights.core.db import Database
 from dna_insights.core.exceptions import ImportCancelled
-from dna_insights.core.utils import sha256_file
+from dna_insights.core.utils import normalize_chrom, sha256_file
 
 HIGH_CONFIDENCE_REVSTAT = {"practice_guideline", "reviewed_by_expert_panel"}
 PATHOGENIC_LABELS = {"pathogenic", "likely_pathogenic"}
@@ -21,6 +21,7 @@ AUTO_IMPORT_NAMES = [
     "clinvar.vcf.gz",
     "clinvar.vcf",
 ]
+BATCH_SIZE = 5000
 
 
 def _open_vcf(path: Path):
@@ -126,21 +127,52 @@ def _total_bytes(path: Path) -> int:
         return 0
 
 
+def _normalize_header_key(value: str) -> str:
+    return "".join(value.strip().lower().split())
+
+
+def _column_index(header: list[str], candidates: list[str]) -> int | None:
+    header_map = {_normalize_header_key(name): idx for idx, name in enumerate(header)}
+    for name in candidates:
+        key = _normalize_header_key(name)
+        if key in header_map:
+            return header_map[key]
+    return None
+
+
+def _read_variant_summary_header(path: Path) -> list[str] | None:
+    handle = _open_text(path)
+    try:
+        for line in handle:
+            if not line.strip():
+                continue
+            if line.startswith("#"):
+                if "AlleleID" in line:
+                    return line.lstrip("#").rstrip("\n").split("\t")
+                continue
+            return line.rstrip("\n").split("\t")
+    finally:
+        _close_text(handle)
+    return None
+
+
+def _has_required_columns(header: list[str]) -> bool:
+    rs_idx = _column_index(header, ["RS# (dbSNP)", "RS#(dbSNP)", "RS#"])
+    clnsig_idx = _column_index(header, ["ClinicalSignificance"])
+    review_idx = _column_index(header, ["ReviewStatus"])
+    return rs_idx is not None and clnsig_idx is not None and review_idx is not None
+
+
 def _is_variant_summary(path: Path) -> bool:
     name = path.name.lower()
     if "variant_summary" in name:
         return True
-    if name.endswith(".txt") or name.endswith(".txt.gz"):
-        return True
-    return False
-
-
-def _column_index(header: list[str], candidates: list[str]) -> int | None:
-    header_map = {name: idx for idx, name in enumerate(header)}
-    for name in candidates:
-        if name in header_map:
-            return header_map[name]
-    return None
+    if not (name.endswith(".txt") or name.endswith(".txt.gz")):
+        return False
+    header = _read_variant_summary_header(path)
+    if not header or not _has_required_columns(header):
+        raise ValueError("File does not look like ClinVar variant_summary.")
+    return True
 
 
 def _iter_variant_summary(
@@ -246,7 +278,7 @@ def _iter_variant_summary(
             conditions = parts[phenotype_idx].strip() if phenotype_idx is not None and phenotype_idx < len(parts) else ""
             last_eval = parts[last_eval_idx].strip() if last_eval_idx is not None and last_eval_idx < len(parts) else ""
 
-            yield (rsid, chrom, pos, ref, alt, clnsig, review, conditions, last_eval)
+            yield (rsid, normalize_chrom(chrom), pos, ref, alt, clnsig, review, conditions, last_eval)
     finally:
         _close_text(handle)
 
@@ -331,126 +363,135 @@ def import_clinvar_snapshot(
     cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
     db = Database(db_path)
-    if rsid_filter is not None and not rsid_filter:
-        db.close()
-        return {"skipped": True, "reason": "no_rsids"}
-
-    file_hash = sha256_file(file_path)
-    latest = db.get_latest_clinvar_import()
-    if latest and latest.get("file_hash_sha256") == file_hash:
-        db.close()
-        return {"skipped": True, "reason": "already_imported", **latest}
-
-    inserted = 0
-    batch: list[tuple] = []
-    total_bytes = _total_bytes(file_path)
-
     try:
-        db.begin()
-        if replace:
-            db.clear_clinvar_variants(commit=False)
+        if rsid_filter is not None and not rsid_filter:
+            return {"skipped": True, "reason": "no_rsids"}
 
-        if _is_variant_summary(file_path):
-            for row in _iter_variant_summary(
-                file_path=file_path,
-                rsid_filter=rsid_filter,
-                on_progress_detail=on_progress_detail,
-                cancel_check=cancel_check,
-            ):
-                batch.append(row)
-                inserted += 1
+        file_hash = sha256_file(file_path)
+        latest = db.get_latest_clinvar_import()
+        if latest and latest.get("file_hash_sha256") == file_hash:
+            return {"skipped": True, "reason": "already_imported", **latest}
 
-                if len(batch) >= 1000:
-                    db.upsert_clinvar_variants(batch)
-                    batch.clear()
+        processed = 0
+        unique_rsids: set[str] = set()
+        batch: list[tuple] = []
+        total_bytes = _total_bytes(file_path)
 
-                if on_progress and inserted % 5000 == 0:
-                    on_progress(inserted)
-        else:
-            handle = _open_vcf(file_path)
-            bytes_read = 0
-            last_emit = 0
-            start_time = time.monotonic()
-            try:
-                for line in handle:
-                    if cancel_check and cancel_check():
-                        raise ImportCancelled("ClinVar import cancelled.")
-                    if on_progress_detail and total_bytes > 0:
-                        if file_path.suffix.lower() == ".gz":
-                            bytes_read = _compressed_bytes_read(handle)
-                        else:
-                            bytes_read += len(line.encode("utf-8", errors="ignore"))
-                        if bytes_read - last_emit >= 512 * 1024 or bytes_read >= total_bytes:
-                            last_emit = bytes_read
-                            elapsed = max(time.monotonic() - start_time, 0.001)
-                            rate = bytes_read / elapsed
-                            percent = min(int((bytes_read / total_bytes) * 100), 100)
-                            remaining = max(total_bytes - bytes_read, 0)
-                            eta_seconds = remaining / rate if rate > 0 else 0.0
-                            on_progress_detail(percent, bytes_read, eta_seconds)
-                    if line.startswith("#"):
-                        continue
-                    parts = line.strip().split("\t")
-                    if len(parts) < 8:
-                        continue
-                    chrom, pos, rsid, ref, alt, _qual, _filter, info = parts[:8]
-                    if not rsid.startswith("rs"):
-                        continue
-                    info_map = _parse_info(info)
-                    clnsig = info_map.get("CLNSIG", "")
-                    review = info_map.get("CLNREVSTAT", "")
-                    if rsid_filter is not None and rsid not in rsid_filter:
-                        continue
+        try:
+            db.begin()
+            if replace:
+                db.clear_clinvar_variants(commit=False)
 
-                    conditions = info_map.get("CLNDN") or info_map.get("CLNDISDB") or ""
-                    last_eval = info_map.get("CLNDATE", "")
+            if _is_variant_summary(file_path):
+                for row in _iter_variant_summary(
+                    file_path=file_path,
+                    rsid_filter=rsid_filter,
+                    on_progress_detail=on_progress_detail,
+                    cancel_check=cancel_check,
+                ):
+                    batch.append(row)
+                    processed += 1
+                    rsid = row[0]
+                    if rsid not in unique_rsids:
+                        unique_rsids.add(rsid)
 
-                    batch.append(
-                        (
-                            rsid,
-                            chrom,
-                            int(pos),
-                            ref,
-                            alt,
-                            clnsig,
-                            review,
-                            conditions,
-                            last_eval,
-                        )
-                    )
-                    inserted += 1
-
-                    if len(batch) >= 1000:
+                    if len(batch) >= BATCH_SIZE:
                         db.upsert_clinvar_variants(batch)
                         batch.clear()
 
-                    if on_progress and inserted % 5000 == 0:
-                        on_progress(inserted)
-            finally:
-                _close_text(handle)
+                    if on_progress and processed % 5000 == 0:
+                        on_progress(processed)
+            else:
+                handle = _open_vcf(file_path)
+                bytes_read = 0
+                last_emit = 0
+                start_time = time.monotonic()
+                try:
+                    for line in handle:
+                        if cancel_check and cancel_check():
+                            raise ImportCancelled("ClinVar import cancelled.")
+                        lower = line.lower()
+                        if line.startswith("##"):
+                            if "grch38" in lower or "hg38" in lower:
+                                raise ValueError("ClinVar VCF appears to be GRCh38; expected GRCh37.")
+                            continue
+                        if on_progress_detail and total_bytes > 0:
+                            if file_path.suffix.lower() == ".gz":
+                                bytes_read = _compressed_bytes_read(handle)
+                            else:
+                                bytes_read += len(line.encode("utf-8", errors="ignore"))
+                            if bytes_read - last_emit >= 512 * 1024 or bytes_read >= total_bytes:
+                                last_emit = bytes_read
+                                elapsed = max(time.monotonic() - start_time, 0.001)
+                                rate = bytes_read / elapsed
+                                percent = min(int((bytes_read / total_bytes) * 100), 100)
+                                remaining = max(total_bytes - bytes_read, 0)
+                                eta_seconds = remaining / rate if rate > 0 else 0.0
+                                on_progress_detail(percent, bytes_read, eta_seconds)
+                        if line.startswith("#"):
+                            continue
+                        parts = line.strip().split("\t")
+                        if len(parts) < 8:
+                            continue
+                        chrom, pos, rsid, ref, alt, _qual, _filter, info = parts[:8]
+                        if not rsid.startswith("rs"):
+                            continue
+                        info_map = _parse_info(info)
+                        clnsig = info_map.get("CLNSIG", "")
+                        review = info_map.get("CLNREVSTAT", "")
+                        if rsid_filter is not None and rsid not in rsid_filter:
+                            continue
 
-        if batch:
-            db.upsert_clinvar_variants(batch)
+                        conditions = info_map.get("CLNDN") or info_map.get("CLNDISDB") or ""
+                        last_eval = info_map.get("CLNDATE", "")
 
-        db.commit()
-    except ImportCancelled:
-        try:
-            db.rollback()
+                        batch.append(
+                            (
+                                rsid,
+                                normalize_chrom(chrom),
+                                int(pos),
+                                ref,
+                                alt,
+                                clnsig,
+                                review,
+                                conditions,
+                                last_eval,
+                            )
+                        )
+                        processed += 1
+                        if rsid not in unique_rsids:
+                            unique_rsids.add(rsid)
+
+                        if len(batch) >= BATCH_SIZE:
+                            db.upsert_clinvar_variants(batch)
+                            batch.clear()
+
+                        if on_progress and processed % 5000 == 0:
+                            on_progress(processed)
+                finally:
+                    _close_text(handle)
+
+            if batch:
+                db.upsert_clinvar_variants(batch)
+
+            db.add_clinvar_import(file_hash, len(unique_rsids), commit=False)
+            db.commit()
+        except ImportCancelled:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
         except Exception:
-            pass
-        db.close()
-        raise
-    except Exception:
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        db.close()
-        raise
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
 
-    db.add_clinvar_import(file_hash, inserted)
-    db.close()
-    return {
-        "file_hash_sha256": file_hash,
-        "variant_count": inserted,
-    }
+        return {
+            "file_hash_sha256": file_hash,
+            "variant_count": len(unique_rsids),
+        }
+    finally:
+        db.close()
