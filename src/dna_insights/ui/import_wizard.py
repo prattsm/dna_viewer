@@ -322,11 +322,20 @@ class ImportPage(QWidget):
         self._import_progress.setLabelText(label)
         self._import_progress.setValue(int(status["visual_percent"]))
 
+    def _finalize_import_progress(self) -> None:
+        progress = self._import_progress
+        self._import_progress = None
+        self._import_cancel_button = None
+        if progress:
+            progress.blockSignals(True)
+            progress.hide()
+            progress.deleteLater()
+
     @Slot(object)
     def _finish_import(self, summary) -> None:
-        if self._import_progress:
-            self._import_progress.setValue(100)
-            self._import_progress.close()
+        if self._import_status:
+            self._import_status["visual_percent"] = 100
+        self._finalize_import_progress()
         self.summary_label.setText(
             f"Imported {summary.qc_report.total_markers} markers. Call rate {summary.qc_report.call_rate:.2%}."
         )
@@ -335,17 +344,13 @@ class ImportPage(QWidget):
 
     @Slot()
     def _cancelled_import(self) -> None:
-        if self._import_progress:
-            self._import_progress.setValue(0)
-            self._import_progress.close()
+        self._finalize_import_progress()
         self._last_import_ok = False
         self.summary_label.setText("Import cancelled.")
 
     @Slot(str)
     def _fail_import(self, message: str) -> None:
-        if self._import_progress:
-            self._import_progress.setValue(0)
-            self._import_progress.close()
+        self._finalize_import_progress()
         self._last_import_ok = False
         QMessageBox.critical(self, "Import failed", message)
 
@@ -445,7 +450,9 @@ class ImportPage(QWidget):
         update_label()
 
     def _finish_clinvar(self, summary: dict, progress) -> None:
-        progress.close()
+        progress.blockSignals(True)
+        progress.hide()
+        progress.deleteLater()
         if summary.get("skipped"):
             return
         self.summary_label.setText(
@@ -454,7 +461,9 @@ class ImportPage(QWidget):
         self.state.data_changed.emit()
 
     def _fail_clinvar(self, message: str, progress) -> None:
-        progress.close()
+        progress.blockSignals(True)
+        progress.hide()
+        progress.deleteLater()
         QMessageBox.warning(self, "ClinVar import failed", message)
 
     def _cancel_clinvar_request(self) -> None:
@@ -467,7 +476,9 @@ class ImportPage(QWidget):
             self._clinvar_progress.setLabelText("Cancelling ClinVar import...")
 
     def _cancel_clinvar(self, progress) -> None:
-        progress.close()
+        progress.blockSignals(True)
+        progress.hide()
+        progress.deleteLater()
         self.summary_label.setText(self.summary_label.text() + " ClinVar import cancelled.")
 
     def _reenable_import_ui(self) -> None:
